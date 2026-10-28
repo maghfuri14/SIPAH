@@ -1,0 +1,6 @@
+{
+  "name": "Sistem Informasi Pondok Al Hidayah Tertek",
+  "description": "Sistem Informasi Login dan Management Internal Pondok Al Hidayah Tertek, Pare, Kediri",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
