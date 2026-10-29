@@ -11,7 +11,7 @@ import SyahriyahListPage from '../features/syahriyah/SyahriyahListPage';
 import KilatanListPage from '../features/kilatan/KilatanListPage';
 import KasListPage from '../features/kas/KasListPage';
 import LaporanPage from '../features/laporan/LaporanPage';
-import PlaceholderPage from '../features/placeholder/PlaceholderPage';
+import PengaturanPage from '../features/pengaturan/PengaturanPage';
 
 export const AppRouter: React.FC = () => {
   return (
@@ -27,7 +27,7 @@ export const AppRouter: React.FC = () => {
           <Route path="/kilatan" element={<KilatanListPage />} />
           <Route path="/kas" element={<KasListPage />} />
           <Route path="/laporan" element={<LaporanPage />} />
-          <Route path="/pengaturan" element={<PlaceholderPage title="Pengaturan" />} />
+          <Route path="/pengaturan" element={<PengaturanPage />} />
         </Route>
       </Route>
       <Route path="/" element={<Navigate to="/dashboard" replace />} />

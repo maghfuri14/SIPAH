@@ -2,18 +2,21 @@ import React, { useState, useEffect, useMemo } from 'react';
 import {
   X,
   Search,
-  Check,
+  CheckCircle2,
   Plus,
   Trash2,
   ChevronLeft,
   ChevronRight,
   Calendar,
+  Download,
+  Printer,
 } from 'lucide-react';
 import { Santri } from '../../types/santri';
 import {
   SyahriyahBulan,
   SyahriyahItemInput,
   IuranTambahanInput,
+  SyahriyahTransaksiRecord,
 } from '../../types/syahriyah';
 import {
   syahriyahService,
@@ -22,6 +25,7 @@ import {
 import { santriService } from '../../lib/santriService';
 import { showToast } from '../../components/ui/Toast';
 import { formatRupiah, formatThousand, parseThousand } from '../../lib/formatter';
+import { generateKwitansiPdf, printKwitansiHtml } from '../../lib/pdfHelper';
 
 const BULAN_FULL_NAMES = [
   'Januari',
@@ -82,6 +86,10 @@ export const SyahriyahPaymentModal: React.FC<SyahriyahPaymentModalProps> = ({
 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Post-submit success view state
+  const [isSuccess, setIsSuccess] = useState(false);
+  const [savedRecord, setSavedRecord] = useState<SyahriyahTransaksiRecord | null>(null);
+
   // Load all santri for picker
   useEffect(() => {
     if (isOpen) {
@@ -102,6 +110,8 @@ export const SyahriyahPaymentModal: React.FC<SyahriyahPaymentModalProps> = ({
       setKeterangan('');
       setIsDeclared(false);
       setItemInputs({});
+      setIsSuccess(false);
+      setSavedRecord(null);
     }
   }, [isOpen, initialSantri, tahunAktif]);
 
@@ -117,7 +127,8 @@ export const SyahriyahPaymentModal: React.FC<SyahriyahPaymentModalProps> = ({
           if (
             bulanAktif &&
             selectedYear === tahunAktif &&
-            Object.keys(itemInputs).length === 0
+            Object.keys(itemInputs).length === 0 &&
+            !isSuccess
           ) {
             const targetRec = row.records.find((r) => r.bulan === bulanAktif);
             if (targetRec && targetRec.status !== 'Lunas') {
@@ -136,7 +147,7 @@ export const SyahriyahPaymentModal: React.FC<SyahriyahPaymentModalProps> = ({
         }
       });
     }
-  }, [isOpen, selectedSantri, selectedYear, bulanAktif, tahunAktif]);
+  }, [isOpen, selectedSantri, selectedYear, bulanAktif, tahunAktif, isSuccess]);
 
   // Toggle month selection in selectedYear
   const handleToggleMonth = (bulan: number) => {
@@ -172,7 +183,6 @@ export const SyahriyahPaymentModal: React.FC<SyahriyahPaymentModalProps> = ({
     if (!item) return;
 
     const tarif = selectedSantri ? getTarifSyahriyah(selectedSantri.kategori) : 150000;
-    // Get record sisa if available
     const sisa = item.nominal || tarif;
 
     setItemInputs((prev) => ({
@@ -280,7 +290,7 @@ export const SyahriyahPaymentModal: React.FC<SyahriyahPaymentModalProps> = ({
 
     setIsSubmitting(true);
     try {
-      await syahriyahService.simpanPembayaranSyahriyah(
+      const rec = await syahriyahService.simpanPembayaranSyahriyah(
         selectedSantri.id,
         selectedItemsList,
         {
@@ -291,17 +301,28 @@ export const SyahriyahPaymentModal: React.FC<SyahriyahPaymentModalProps> = ({
         }
       );
 
+      setSavedRecord(rec);
+      setIsSuccess(true);
       showToast(
         `Pembayaran Syahriyah ${selectedSantri.nama} berhasil dicatat & masuk ke Buku Kas!`,
         'success'
       );
       onSuccess();
-      onClose();
     } catch (err: any) {
       showToast(err.message || 'Gagal mencatat pembayaran syahriyah', 'error');
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const handleDownloadPdf = () => {
+    if (!savedRecord || !selectedSantri) return;
+    generateKwitansiPdf(savedRecord, selectedSantri);
+  };
+
+  const handlePrint = () => {
+    if (!savedRecord || !selectedSantri) return;
+    printKwitansiHtml(savedRecord, selectedSantri);
   };
 
   if (!isOpen) return null;
@@ -315,404 +336,482 @@ export const SyahriyahPaymentModal: React.FC<SyahriyahPaymentModalProps> = ({
 
       {/* Modal Dialog */}
       <div className="relative w-full max-w-2xl bg-white h-full sm:h-auto sm:max-h-[92vh] rounded-none sm:rounded-2xl shadow-2xl flex flex-col z-10 overflow-hidden">
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-[#E2E8F0] bg-slate-50 shrink-0">
-          <div>
-            <h2 className="text-lg font-bold text-[#0F172A]">Catat Pembayaran Syahriyah</h2>
-            <p className="text-xs text-slate-500">
-              Mendukung pembayaran lintas tahun & pencatatan otomatis ke Buku Kas
-            </p>
-          </div>
-          <button
-            onClick={onClose}
-            aria-label="Tutup modal"
-            className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-200/50 transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
+        {isSuccess && savedRecord && selectedSantri ? (
+          /* SUCCESS VIEW WITH 2 ACTION BUTTONS: UNDUH PDF & CETAK */
+          <div className="flex flex-col h-full sm:h-auto p-6 sm:p-8 text-center items-center justify-center space-y-4">
+            <button
+              onClick={onClose}
+              aria-label="Tutup modal"
+              className="absolute top-4 right-4 p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
 
-        {/* Form Content Body */}
-        <form id="syahriyahPaymentForm" onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-5">
-          {/* Section 1: Santri Selector if initialSantri is null */}
-          {!selectedSantri ? (
-            <div className="space-y-3 bg-amber-50/60 border border-amber-200 p-4 rounded-xl">
-              <label className="block text-xs font-bold text-amber-900">
-                Pilih Santri Terlebih Dahulu <span className="text-red-500">*</span>
-              </label>
-              <div className="relative">
-                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  value={santriSearch}
-                  onChange={(e) => setSantriSearch(e.target.value)}
-                  placeholder="Ketik nama atau NIS santri..."
-                  className="w-full pl-9 pr-4 py-2 text-sm border border-slate-300 rounded-lg outline-none focus:border-[#059669] bg-white text-[#0F172A]"
-                />
-              </div>
-
-              {/* Picker Results Dropdown */}
-              {santriSearch.trim() && (
-                <div className="bg-white border border-slate-200 rounded-lg max-h-48 overflow-y-auto divide-y divide-slate-100 shadow-md">
-                  {filteredSantriPicker.length === 0 ? (
-                    <p className="p-3 text-xs text-slate-500 text-center">Santri tidak ditemukan</p>
-                  ) : (
-                    filteredSantriPicker.map((s) => (
-                      <button
-                        key={s.id}
-                        type="button"
-                        onClick={() => {
-                          setSelectedSantri(s);
-                          setSantriSearch('');
-                        }}
-                        className="w-full text-left p-3 hover:bg-emerald-50 flex items-center justify-between text-xs transition-colors"
-                      >
-                        <div>
-                          <span className="font-bold text-[#0F172A]">{s.nama}</span>
-                          <span className="text-slate-400 ml-2">({s.nis})</span>
-                        </div>
-                        <span className="font-semibold text-[#059669] px-2 py-0.5 bg-emerald-100 rounded">
-                          {s.kategori}
-                        </span>
-                      </button>
-                    ))
-                  )}
-                </div>
-              )}
+            <div className="w-16 h-16 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600 shadow-xs">
+              <CheckCircle2 className="w-10 h-10" />
             </div>
-          ) : (
-            /* Selected Santri Info Banner */
-            <div className="bg-slate-50 border border-slate-200 p-4 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <span className="font-bold text-sm text-[#0F172A]">{selectedSantri.nama}</span>
-                  <span className="px-2 py-0.5 rounded font-mono text-[11px] bg-slate-200 text-slate-700">
-                    {selectedSantri.nis}
-                  </span>
-                  <span className="px-2 py-0.5 rounded font-semibold text-emerald-800 bg-emerald-100 border border-emerald-200">
-                    {selectedSantri.kategori}
-                  </span>
-                </div>
-                <p className="text-slate-500">
-                  Tarif Iuran: <strong className="text-slate-700">{formatRupiah(tarifBulan)}</strong> / bulan
-                </p>
-              </div>
 
-              {!initialSantri && (
-                <button
-                  type="button"
-                  onClick={() => setSelectedSantri(null)}
-                  className="text-xs text-emerald-700 hover:underline font-semibold self-start sm:self-center"
-                >
-                  Ganti Santri
-                </button>
-              )}
+            <div className="space-y-1">
+              <h3 className="text-xl font-bold text-[#0F172A]">Pembayaran Berhasil Disimpan!</h3>
+              <p className="text-xs text-slate-500 max-w-md">
+                Transaksi pembayaran Syahriyah telah berhasil dicatat dan otomatis dibukukan ke Buku Kas Pondok.
+              </p>
             </div>
-          )}
 
-          {selectedSantri && (
-            <>
-              {/* Section 2: Year Nav & 12 Months Grid */}
-              <div className="space-y-3">
-                {/* Year Navigation Bar Centered */}
-                <div className="relative bg-slate-100/80 p-2.5 rounded-xl border border-slate-200">
-                  <div className="flex items-center justify-center gap-4 my-1">
-                    <button
-                      type="button"
-                      onClick={() => setSelectedYear((y) => y - 1)}
-                      className="p-1.5 rounded-lg bg-white border border-slate-300 text-slate-700 hover:bg-slate-100 transition-colors shrink-0"
-                      title="Tahun Sebelumnya"
-                      aria-label="Tahun Sebelumnya"
-                    >
-                      <ChevronLeft className="w-4 h-4" />
-                    </button>
-
-                    <div className="flex items-center justify-center gap-1.5 px-3 py-1 bg-white border border-slate-300 rounded-lg text-sm font-bold text-[#0F172A]">
-                      <Calendar className="w-4 h-4 text-[#059669] shrink-0" />
-                      <span className="w-16 text-center font-mono">{selectedYear}</span>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => setSelectedYear((y) => y + 1)}
-                      className="p-1.5 rounded-lg bg-white border border-slate-300 text-slate-700 hover:bg-slate-100 transition-colors shrink-0"
-                      title="Tahun Berikutnya"
-                      aria-label="Tahun Berikutnya"
-                    >
-                      <ChevronRight className="w-4 h-4" />
-                    </button>
-                  </div>
-
-                  {/* Cross-Year Badge Indicator */}
-                  {selectedKeysInOtherYearsCount > 0 && (
-                    <div className="flex justify-center mt-2 sm:absolute sm:right-3 sm:top-1/2 sm:-translate-y-1/2 sm:mt-0">
-                      <span className="px-2.5 py-1 rounded-md text-[11px] font-semibold bg-amber-100 text-amber-800 border border-amber-300">
-                        ({selectedKeysInOtherYearsCount} bulan di tahun lain)
-                      </span>
-                    </div>
-                  )}
-                </div>
-
-                {/* 12 Months Grid for selectedYear */}
-                <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-2">
-                  {BULAN_FULL_NAMES.map((mName, idx) => {
-                    const bulanNum = idx + 1;
-                    const rec = currentYearRecords.find((r) => r.bulan === bulanNum);
-                    const isLunas = rec?.status === 'Lunas';
-
-                    const itemKey = `${selectedYear}-${bulanNum}`;
-                    const isSelected = Boolean(itemInputs[itemKey]);
-
-                    return (
-                      <button
-                        key={bulanNum}
-                        type="button"
-                        disabled={isLunas}
-                        onClick={() => handleToggleMonth(bulanNum)}
-                        className={`p-2.5 rounded-xl border text-xs font-semibold flex flex-col items-center justify-center transition-all ${
-                          isLunas
-                            ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed'
-                            : isSelected
-                            ? 'bg-[#059669] text-white border-[#059669] shadow-xs'
-                            : 'bg-white text-slate-700 border-slate-200 hover:border-[#059669]'
-                        }`}
-                      >
-                        <span className="font-bold">{mName.substring(0, 3)}</span>
-                        {isLunas ? (
-                          <span className="text-[10px] text-slate-400 font-normal">Lunas</span>
-                        ) : rec?.status === 'Sebagian' ? (
-                          <span
-                            className={`text-[10px] ${
-                              isSelected ? 'text-emerald-100' : 'text-amber-600'
-                            } font-bold`}
-                          >
-                            Sebagian
-                          </span>
-                        ) : (
-                          <span
-                            className={`text-[10px] ${
-                              isSelected ? 'text-emerald-100' : 'text-slate-400'
-                            } font-normal`}
-                          >
-                            Belum
-                          </span>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
+            {/* Receipt Details Summary Card */}
+            <div className="w-full bg-slate-50 border border-slate-200 rounded-xl p-4 text-left space-y-2 text-xs">
+              <div className="flex justify-between items-center pb-2 border-b border-slate-200">
+                <span className="text-slate-500">No. Kwitansi:</span>
+                <span className="font-mono font-bold text-slate-800">{savedRecord.id}</span>
               </div>
-
-              {/* Section 3: Item Breakdown Form for All Selected Months Across Years */}
-              {selectedItemsList.length > 0 && (
-                <div className="space-y-3 bg-slate-50 border border-slate-200 p-4 rounded-xl">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
-                      Rincian Pembayaran Bulan Terpilih ({selectedItemsList.length} bulan)
-                    </h3>
-                  </div>
-
-                  <div className="space-y-2.5 divide-y divide-slate-200/80">
-                    {selectedItemsList.map((item) => {
-                      const itemKey = `${item.tahun}-${item.bulan}`;
-                      const mName = BULAN_FULL_NAMES[item.bulan - 1];
-
-                      return (
-                        <div
-                          key={itemKey}
-                          className="pt-2.5 first:pt-0 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs"
-                        >
-                          <div className="w-36 font-bold text-[#0F172A] flex items-center gap-1.5">
-                            <span>{mName} {item.tahun}</span>
-                          </div>
-
-                          <div className="flex items-center gap-3">
-                            <div className="flex items-center gap-2 bg-white px-2 py-1 rounded border border-slate-200">
-                              <label className="flex items-center gap-1 cursor-pointer font-medium text-slate-700">
-                                <input
-                                  type="radio"
-                                  name={`jenis_${itemKey}`}
-                                  checked={item.jenis === 'Penuh'}
-                                  onChange={() => handleJenisChange(itemKey, 'Penuh')}
-                                  className="text-[#059669] focus:ring-[#059669]"
-                                />
-                                Penuh
-                              </label>
-                              <label className="flex items-center gap-1 cursor-pointer font-medium text-slate-700 ml-2">
-                                <input
-                                  type="radio"
-                                  name={`jenis_${itemKey}`}
-                                  checked={item.jenis === 'Sebagian'}
-                                  onChange={() => handleJenisChange(itemKey, 'Sebagian')}
-                                  className="text-[#059669] focus:ring-[#059669]"
-                                />
-                                Sebagian
-                              </label>
-                            </div>
-
-                            <div className="w-32">
-                              <input
-                                type="text"
-                                disabled={item.jenis === 'Penuh'}
-                                value={formatThousand(item.nominal)}
-                                onChange={(e) => handleNominalChange(itemKey, e.target.value)}
-                                className="w-full px-2.5 py-1 text-xs border border-slate-300 rounded font-semibold text-right outline-none focus:border-[#059669] disabled:bg-slate-100 disabled:text-slate-600"
-                              />
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {/* Section 4: Iuran Tambahan (Opsional) */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <label className="block text-xs font-bold text-slate-700">
-                    Iuran Tambahan / Lainnya (Opsional)
-                  </label>
-                  <button
-                    type="button"
-                    onClick={handleAddIuranLain}
-                    className="inline-flex items-center gap-1 text-xs font-semibold text-[#059669] hover:underline"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>+ Tambah Iuran Lain</span>
-                  </button>
-                </div>
-
-                {iuranTambahan.map((item) => (
-                  <div key={item.id} className="flex items-center gap-2">
-                    <input
-                      type="text"
-                      placeholder="Nama iuran (contoh: Pembangunan, Seragam)"
-                      value={item.nama}
-                      onChange={(e) => handleIuranLainChange(item.id, 'nama', e.target.value)}
-                      className="flex-1 px-3 py-1.5 text-xs border border-slate-300 rounded-lg outline-none focus:border-[#059669]"
-                    />
-                    <div className="w-32 relative">
-                      <input
-                        type="text"
-                        placeholder="Nominal"
-                        value={formatThousand(item.nominal)}
-                        onChange={(e) => handleIuranLainChange(item.id, 'nominal', e.target.value)}
-                        className="w-full px-2.5 py-1.5 text-xs border border-slate-300 rounded-lg outline-none font-semibold text-right focus:border-[#059669]"
-                      />
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveIuranLain(item.id)}
-                      className="p-1.5 text-slate-400 hover:text-red-600 transition-colors"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                ))}
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500">Nama Santri:</span>
+                <span className="font-bold text-slate-900">{selectedSantri.nama} ({selectedSantri.nis})</span>
               </div>
-
-              {/* Section 5: Detail Pembayaran */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label htmlFor="tanggalBayarSyahriyah" className="block text-xs font-semibold text-slate-700 mb-1">
-                    Tanggal Bayar <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    id="tanggalBayarSyahriyah"
-                    type="date"
-                    value={tanggalBayar}
-                    onChange={(e) => setTanggalBayar(e.target.value)}
-                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg outline-none focus:border-[#059669]"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Metode Pembayaran <span className="text-red-500">*</span>
-                  </label>
-                  <div className="flex items-center gap-3 pt-1 text-xs font-medium text-slate-700">
-                    {(['Tunai', 'Transfer', 'Lainnya'] as const).map((m) => (
-                      <label key={m} className="flex items-center gap-1.5 cursor-pointer">
-                        <input
-                          type="radio"
-                          name="metodeBayar"
-                          checked={metode === m}
-                          onChange={() => setMetode(m)}
-                          className="text-[#059669] focus:ring-[#059669]"
-                        />
-                        {m}
-                      </label>
-                    ))}
-                  </div>
-                </div>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500">Tanggal Bayar:</span>
+                <span className="font-medium text-slate-800">{tanggalBayar} ({metode})</span>
               </div>
-
-              <div>
-                <label htmlFor="ketSyahriyah" className="block text-xs font-semibold text-slate-700 mb-1">
-                  Keterangan Tambahan (opsional)
-                </label>
-                <textarea
-                  id="ketSyahriyah"
-                  rows={2}
-                  value={keterangan}
-                  onChange={(e) => setKeterangan(e.target.value)}
-                  placeholder="Catatan kwitansi atau referensi transfer"
-                  className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg outline-none focus:border-[#059669]"
-                />
+              <div className="flex justify-between items-center pt-2 border-t border-slate-200">
+                <span className="font-bold text-slate-700">Total Nominal:</span>
+                <span className="font-bold text-emerald-600 text-sm">
+                  {formatRupiah(savedRecord.total_pembayaran)}
+                </span>
               </div>
+            </div>
 
-              {/* Section 6: Checkbox Pernyataan Bendahara */}
-              <div className="bg-emerald-50/60 border border-emerald-200 p-3 rounded-xl flex items-start gap-2.5">
-                <input
-                  type="checkbox"
-                  id="pernyataanBendahara"
-                  checked={isDeclared}
-                  onChange={(e) => setIsDeclared(e.target.checked)}
-                  className="mt-0.5 rounded border-emerald-400 text-[#059669] focus:ring-[#059669]"
-                />
-                <label htmlFor="pernyataanBendahara" className="text-xs text-emerald-900 font-medium cursor-pointer">
-                  Saya (bendahara) menyatakan pembayaran ini telah diterima secara benar dan sah. Transaksi akan langsung tercatat ke Buku Kas Pondok.
-                </label>
-              </div>
-            </>
-          )}
-        </form>
+            {/* 2 Action Buttons Side-by-Side */}
+            <div className="flex gap-2 w-full mt-6">
+              <button
+                type="button"
+                onClick={handleDownloadPdf}
+                className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs py-2.5 px-4 rounded-xl flex items-center justify-center gap-2 transition-colors shadow-xs cursor-pointer"
+              >
+                <Download className="w-4 h-4" />
+                <span>Unduh PDF</span>
+              </button>
 
-        {/* Footer */}
-        <div className="flex items-center justify-between px-6 py-4 border-t border-[#E2E8F0] bg-slate-50 shrink-0">
-          <div>
-            <span className="text-xs text-slate-500 block">Total Pembayaran:</span>
-            <span className="text-lg font-bold text-[#059669]">
-              {formatRupiah(totalPembayaran)}
-            </span>
-          </div>
+              <button
+                type="button"
+                onClick={handlePrint}
+                className="flex-1 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-semibold text-xs py-2.5 px-4 rounded-xl flex items-center justify-center gap-2 transition-colors shadow-xs cursor-pointer"
+              >
+                <Printer className="w-4 h-4" />
+                <span>Cetak</span>
+              </button>
+            </div>
 
-          <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={onClose}
-              disabled={isSubmitting}
-              className="px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-100 text-xs font-semibold transition-colors"
+              className="w-full text-xs text-slate-500 hover:text-slate-800 font-semibold py-1 transition-colors"
             >
-              Batal
-            </button>
-            <button
-              type="submit"
-              form="syahriyahPaymentForm"
-              disabled={
-                isSubmitting ||
-                !selectedSantri ||
-                selectedItemsList.length === 0 ||
-                totalPembayaran <= 0 ||
-                !isDeclared
-              }
-              className="px-5 py-2 rounded-lg bg-[#059669] hover:bg-[#047857] text-white text-xs font-semibold transition-colors shadow-xs inline-flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {isSubmitting ? 'Memproses...' : 'Simpan Pembayaran'}
+              Tutup Modal
             </button>
           </div>
-        </div>
+        ) : (
+          /* FORM VIEW */
+          <>
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-[#E2E8F0] bg-slate-50 shrink-0">
+              <div>
+                <h2 className="text-lg font-bold text-[#0F172A]">Catat Pembayaran Syahriyah</h2>
+                <p className="text-xs text-slate-500">
+                  Mendukung pembayaran lintas tahun & pencatatan otomatis ke Buku Kas
+                </p>
+              </div>
+              <button
+                onClick={onClose}
+                aria-label="Tutup modal"
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-200/50 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Form Content Body */}
+            <form id="syahriyahPaymentForm" onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-5">
+              {/* Section 1: Santri Selector if initialSantri is null */}
+              {!selectedSantri ? (
+                <div className="space-y-3 bg-amber-50/60 border border-amber-200 p-4 rounded-xl">
+                  <label className="block text-xs font-bold text-amber-900">
+                    Pilih Santri Terlebih Dahulu <span className="text-red-500">*</span>
+                  </label>
+                  <div className="relative">
+                    <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      value={santriSearch}
+                      onChange={(e) => setSantriSearch(e.target.value)}
+                      placeholder="Ketik nama atau NIS santri..."
+                      className="w-full pl-9 pr-4 py-2 text-sm border border-slate-300 rounded-lg outline-none focus:border-[#059669] bg-white text-[#0F172A]"
+                    />
+                  </div>
+
+                  {/* Picker Results Dropdown */}
+                  {santriSearch.trim() && (
+                    <div className="bg-white border border-slate-200 rounded-lg max-h-48 overflow-y-auto divide-y divide-slate-100 shadow-md">
+                      {filteredSantriPicker.length === 0 ? (
+                        <p className="p-3 text-xs text-slate-500 text-center">Santri tidak ditemukan</p>
+                      ) : (
+                        filteredSantriPicker.map((s) => (
+                          <button
+                            key={s.id}
+                            type="button"
+                            onClick={() => {
+                              setSelectedSantri(s);
+                              setSantriSearch('');
+                            }}
+                            className="w-full text-left p-3 hover:bg-emerald-50 flex items-center justify-between text-xs transition-colors"
+                          >
+                            <div>
+                              <span className="font-bold text-[#0F172A]">{s.nama}</span>
+                              <span className="text-slate-400 ml-2">({s.nis})</span>
+                            </div>
+                            <span className="font-semibold text-[#059669] px-2 py-0.5 bg-emerald-100 rounded">
+                              {s.kategori}
+                            </span>
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                /* Selected Santri Info Banner */
+                <div className="bg-slate-50 border border-slate-200 p-4 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-sm text-[#0F172A]">{selectedSantri.nama}</span>
+                      <span className="px-2 py-0.5 rounded font-mono text-[11px] bg-slate-200 text-slate-700">
+                        {selectedSantri.nis}
+                      </span>
+                      <span className="px-2 py-0.5 rounded font-semibold text-emerald-800 bg-emerald-100 border border-emerald-200">
+                        {selectedSantri.kategori}
+                      </span>
+                    </div>
+                    <p className="text-slate-500">
+                      Tarif Iuran: <strong className="text-slate-700">{formatRupiah(tarifBulan)}</strong> / bulan
+                    </p>
+                  </div>
+
+                  {!initialSantri && (
+                    <button
+                      type="button"
+                      onClick={() => setSelectedSantri(null)}
+                      className="text-xs text-emerald-700 hover:underline font-semibold self-start sm:self-center"
+                    >
+                      Ganti Santri
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {selectedSantri && (
+                <>
+                  {/* Section 2: Year Nav & 12 Months Grid */}
+                  <div className="space-y-3">
+                    {/* Year Navigation Bar Centered */}
+                    <div className="relative bg-slate-100/80 p-2.5 rounded-xl border border-slate-200">
+                      <div className="flex items-center justify-center gap-4 my-1">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedYear((y) => y - 1)}
+                          className="p-1.5 rounded-lg bg-white border border-slate-300 text-slate-700 hover:bg-slate-100 transition-colors shrink-0"
+                          title="Tahun Sebelumnya"
+                          aria-label="Tahun Sebelumnya"
+                        >
+                          <ChevronLeft className="w-4 h-4" />
+                        </button>
+
+                        <div className="flex items-center justify-center gap-1.5 px-3 py-1 bg-white border border-slate-300 rounded-lg text-sm font-bold text-[#0F172A]">
+                          <Calendar className="w-4 h-4 text-[#059669] shrink-0" />
+                          <span className="w-16 text-center font-mono">{selectedYear}</span>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => setSelectedYear((y) => y + 1)}
+                          className="p-1.5 rounded-lg bg-white border border-slate-300 text-slate-700 hover:bg-slate-100 transition-colors shrink-0"
+                          title="Tahun Berikutnya"
+                          aria-label="Tahun Berikutnya"
+                        >
+                          <ChevronRight className="w-4 h-4" />
+                        </button>
+                      </div>
+
+                      {/* Cross-Year Badge Indicator */}
+                      {selectedKeysInOtherYearsCount > 0 && (
+                        <div className="flex justify-center mt-2 sm:absolute sm:right-3 sm:top-1/2 sm:-translate-y-1/2 sm:mt-0">
+                          <span className="px-2.5 py-1 rounded-md text-[11px] font-semibold bg-amber-100 text-amber-800 border border-amber-300">
+                            ({selectedKeysInOtherYearsCount} bulan di tahun lain)
+                          </span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* 12 Months Grid for selectedYear */}
+                    <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-2">
+                      {BULAN_FULL_NAMES.map((mName, idx) => {
+                        const bulanNum = idx + 1;
+                        const rec = currentYearRecords.find((r) => r.bulan === bulanNum);
+                        const isLunas = rec?.status === 'Lunas';
+
+                        const itemKey = `${selectedYear}-${bulanNum}`;
+                        const isSelected = Boolean(itemInputs[itemKey]);
+
+                        return (
+                          <button
+                            key={bulanNum}
+                            type="button"
+                            disabled={isLunas}
+                            onClick={() => handleToggleMonth(bulanNum)}
+                            className={`p-2.5 rounded-xl border text-xs font-semibold flex flex-col items-center justify-center transition-all ${
+                              isLunas
+                                ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed'
+                                : isSelected
+                                ? 'bg-[#059669] text-white border-[#059669] shadow-xs'
+                                : 'bg-white text-slate-700 border-slate-200 hover:border-[#059669]'
+                            }`}
+                          >
+                            <span className="font-bold">{mName.substring(0, 3)}</span>
+                            {isLunas ? (
+                              <span className="text-[10px] text-slate-400 font-normal">Lunas</span>
+                            ) : rec?.status === 'Sebagian' ? (
+                              <span
+                                className={`text-[10px] ${
+                                  isSelected ? 'text-emerald-100' : 'text-amber-600'
+                                } font-bold`}
+                              >
+                                Sebagian
+                              </span>
+                            ) : (
+                              <span
+                                className={`text-[10px] ${
+                                  isSelected ? 'text-emerald-100' : 'text-slate-400'
+                                } font-normal`}
+                              >
+                                Belum
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Section 3: Item Breakdown Form for All Selected Months Across Years */}
+                  {selectedItemsList.length > 0 && (
+                    <div className="space-y-3 bg-slate-50 border border-slate-200 p-4 rounded-xl">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+                          Rincian Pembayaran Bulan Terpilih ({selectedItemsList.length} bulan)
+                        </h3>
+                      </div>
+
+                      <div className="space-y-2.5 divide-y divide-slate-200/80">
+                        {selectedItemsList.map((item) => {
+                          const itemKey = `${item.tahun}-${item.bulan}`;
+                          const mName = BULAN_FULL_NAMES[item.bulan - 1];
+
+                          return (
+                            <div
+                              key={itemKey}
+                              className="pt-2.5 first:pt-0 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs"
+                            >
+                              <div className="w-36 font-bold text-[#0F172A] flex items-center gap-1.5">
+                                <span>{mName} {item.tahun}</span>
+                              </div>
+
+                              <div className="flex items-center gap-3">
+                                <div className="flex items-center gap-2 bg-white px-2 py-1 rounded border border-slate-200">
+                                  <label className="flex items-center gap-1 cursor-pointer font-medium text-slate-700">
+                                    <input
+                                      type="radio"
+                                      name={`jenis_${itemKey}`}
+                                      checked={item.jenis === 'Penuh'}
+                                      onChange={() => handleJenisChange(itemKey, 'Penuh')}
+                                      className="text-[#059669] focus:ring-[#059669]"
+                                    />
+                                    Penuh
+                                  </label>
+                                  <label className="flex items-center gap-1 cursor-pointer font-medium text-slate-700 ml-2">
+                                    <input
+                                      type="radio"
+                                      name={`jenis_${itemKey}`}
+                                      checked={item.jenis === 'Sebagian'}
+                                      onChange={() => handleJenisChange(itemKey, 'Sebagian')}
+                                      className="text-[#059669] focus:ring-[#059669]"
+                                    />
+                                    Sebagian
+                                  </label>
+                                </div>
+
+                                <div className="w-32">
+                                  <input
+                                    type="text"
+                                    disabled={item.jenis === 'Penuh'}
+                                    value={formatThousand(item.nominal)}
+                                    onChange={(e) => handleNominalChange(itemKey, e.target.value)}
+                                    className="w-full px-2.5 py-1 text-xs border border-slate-300 rounded font-semibold text-right outline-none focus:border-[#059669] disabled:bg-slate-100 disabled:text-slate-600"
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Section 4: Iuran Tambahan (Opsional) */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="block text-xs font-bold text-slate-700">
+                        Iuran Tambahan / Lainnya (Opsional)
+                      </label>
+                      <button
+                        type="button"
+                        onClick={handleAddIuranLain}
+                        className="inline-flex items-center gap-1 text-xs font-semibold text-[#059669] hover:underline"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>+ Tambah Iuran Lain</span>
+                      </button>
+                    </div>
+
+                    {iuranTambahan.map((item) => (
+                      <div key={item.id} className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          placeholder="Nama iuran (contoh: Pembangunan, Seragam)"
+                          value={item.nama}
+                          onChange={(e) => handleIuranLainChange(item.id, 'nama', e.target.value)}
+                          className="flex-1 px-3 py-1.5 text-xs border border-slate-300 rounded-lg outline-none focus:border-[#059669]"
+                        />
+                        <div className="w-32 relative">
+                          <input
+                            type="text"
+                            placeholder="Nominal"
+                            value={formatThousand(item.nominal)}
+                            onChange={(e) => handleIuranLainChange(item.id, 'nominal', e.target.value)}
+                            className="w-full px-2.5 py-1.5 text-xs border border-slate-300 rounded-lg outline-none font-semibold text-right focus:border-[#059669]"
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveIuranLain(item.id)}
+                          className="p-1.5 text-slate-400 hover:text-red-600 transition-colors"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Section 5: Detail Pembayaran */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label htmlFor="tanggalBayarSyahriyah" className="block text-xs font-semibold text-slate-700 mb-1">
+                        Tanggal Bayar <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        id="tanggalBayarSyahriyah"
+                        type="date"
+                        value={tanggalBayar}
+                        onChange={(e) => setTanggalBayar(e.target.value)}
+                        className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg outline-none focus:border-[#059669]"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">
+                        Metode Pembayaran <span className="text-red-500">*</span>
+                      </label>
+                      <div className="flex items-center gap-3 pt-1 text-xs font-medium text-slate-700">
+                        {(['Tunai', 'Transfer', 'Lainnya'] as const).map((m) => (
+                          <label key={m} className="flex items-center gap-1.5 cursor-pointer">
+                            <input
+                              type="radio"
+                              name="metodeBayar"
+                              checked={metode === m}
+                              onChange={() => setMetode(m)}
+                              className="text-[#059669] focus:ring-[#059669]"
+                            />
+                            {m}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label htmlFor="ketSyahriyah" className="block text-xs font-semibold text-slate-700 mb-1">
+                      Keterangan Tambahan (opsional)
+                    </label>
+                    <textarea
+                      id="ketSyahriyah"
+                      rows={2}
+                      value={keterangan}
+                      onChange={(e) => setKeterangan(e.target.value)}
+                      placeholder="Catatan kwitansi atau referensi transfer"
+                      className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg outline-none focus:border-[#059669]"
+                    />
+                  </div>
+
+                  {/* Section 6: Checkbox Pernyataan Bendahara */}
+                  <div className="bg-emerald-50/60 border border-emerald-200 p-3 rounded-xl flex items-start gap-2.5">
+                    <input
+                      type="checkbox"
+                      id="pernyataanBendahara"
+                      checked={isDeclared}
+                      onChange={(e) => setIsDeclared(e.target.checked)}
+                      className="mt-0.5 rounded border-emerald-400 text-[#059669] focus:ring-[#059669]"
+                    />
+                    <label htmlFor="pernyataanBendahara" className="text-xs text-emerald-900 font-medium cursor-pointer">
+                      Saya (bendahara) menyatakan pembayaran ini telah diterima secara benar dan sah. Transaksi akan langsung tercatat ke Buku Kas Pondok.
+                    </label>
+                  </div>
+                </>
+              )}
+            </form>
+
+            {/* Footer */}
+            <div className="flex items-center justify-between px-6 py-4 border-t border-[#E2E8F0] bg-slate-50 shrink-0">
+              <div>
+                <span className="text-xs text-slate-500 block">Total Pembayaran:</span>
+                <span className="text-lg font-bold text-[#059669]">
+                  {formatRupiah(totalPembayaran)}
+                </span>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  disabled={isSubmitting}
+                  className="px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-100 text-xs font-semibold transition-colors"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  form="syahriyahPaymentForm"
+                  disabled={
+                    isSubmitting ||
+                    !selectedSantri ||
+                    selectedItemsList.length === 0 ||
+                    totalPembayaran <= 0 ||
+                    !isDeclared
+                  }
+                  className="px-5 py-2 rounded-lg bg-[#059669] hover:bg-[#047857] text-white text-xs font-semibold transition-colors shadow-xs inline-flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isSubmitting ? 'Memproses...' : 'Simpan Pembayaran'}
+                </button>
+              </div>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
