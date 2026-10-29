@@ -20,7 +20,10 @@ import {
 } from 'lucide-react';
 import { Santri } from '../../types/santri';
 import { santriService } from '../../lib/santriService';
-import { waiverService, SyahriyahWaiver } from '../../lib/waiverService';
+import { waiverService, SyahriyahWaiver, JenisWaiver, getWaiverJenisLabel } from '../../lib/waiverService';
+import { computeEffectiveSyahriyah, getEffectiveStatusLabel } from '../../lib/syahriyahTarif';
+import { getTarifSyahriyah } from '../../lib/syahriyahService';
+import { formatRupiah } from '../../lib/formatter';
 import { SantriFormModal } from './SantriFormModal';
 import { authStore } from '../../store/authStore';
 
@@ -61,8 +64,17 @@ export const SantriDetailPage: React.FC = () => {
   const [waiverTahun, setWaiverTahun] = useState<number>(new Date().getFullYear());
   const [waiverBulanMulai, setWaiverBulanMulai] = useState<number>(1);
   const [waiverBulanSelesai, setWaiverBulanSelesai] = useState<number>(12);
-  const [waiverJenis, setWaiverJenis] = useState<'Bebas' | 'Keringanan'>('Bebas');
+  const [waiverJenis, setWaiverJenis] = useState<JenisWaiver>('Bebas');
   const [waiverKeterangan, setWaiverKeterangan] = useState('');
+
+  // Keringanan Custom — item potongan (multi-item)
+  interface PotonganDraft {
+    id: string;
+    label: string;
+    nominal: number | '';
+  }
+  const PRESET_POTONGAN = ['Potongan Administrasi', 'Diskon Prestasi', 'Potongan Tidak Mampu'];
+  const [potonganDrafts, setPotonganDrafts] = useState<PotonganDraft[]>([]);
 
   // Toast
   const [toastMsg, setToastMsg] = useState<string | null>(null);
@@ -109,19 +121,67 @@ export const SantriDetailPage: React.FC = () => {
       return;
     }
 
+    // Validasi Keringanan Custom — minimal satu item potongan valid
+    let potonganList: { label: string; nominal: number }[] = [];
+    if (waiverJenis === 'Keringanan Custom') {
+      potonganList = potonganDrafts
+        .map((p) => ({ label: p.label.trim(), nominal: Number(p.nominal) || 0 }))
+        .filter((p) => p.label && p.nominal > 0);
+
+      if (potonganList.length === 0) {
+        showToast('Tambahkan minimal satu item potongan dengan nominal lebih dari Rp 0.');
+        return;
+      }
+      const totalPotongan = potonganList.reduce((sum, p) => sum + p.nominal, 0);
+      const baseTarif = santri ? getTarifSyahriyah(santri.kategori) : 150000;
+      if (totalPotongan >= baseTarif) {
+        showToast(
+          `Total potongan (${formatRupiah(totalPotongan)}) melebihi/menyamai tarif dasar (${formatRupiah(baseTarif)}). Gunakan jenis "Bebas" untuk pembebasan penuh.`
+        );
+        return;
+      }
+    }
+
     waiverService.addWaiver({
       santri_id: id,
       tahun: Number(waiverTahun),
       bulan_mulai: Number(waiverBulanMulai),
       bulan_selesai: Number(waiverBulanSelesai),
       jenis: waiverJenis,
+      potongan: waiverJenis === 'Keringanan Custom' ? potonganList : undefined,
       keterangan: waiverKeterangan.trim() || undefined,
     });
 
     setWaivers(waiverService.getWaiversForSantri(id));
     setWaiverModalOpen(false);
     setWaiverKeterangan('');
+    setPotonganDrafts([]);
     showToast('Pembebasan/keringanan periode berhasil ditambahkan.');
+  };
+
+  // ---- Helper untuk draft item potongan ----
+  const handleAddPotonganItem = () => {
+    setPotonganDrafts((prev) => [
+      ...prev,
+      { id: 'pd_' + Date.now(), label: PRESET_POTONGAN[0], nominal: 25000 },
+    ]);
+  };
+
+  const handleRemovePotonganItem = (draftId: string) => {
+    setPotonganDrafts((prev) => prev.filter((p) => p.id !== draftId));
+  };
+
+  const handlePotonganChange = (draftId: string, field: 'label' | 'nominal', value: string) => {
+    setPotonganDrafts((prev) =>
+      prev.map((p) => {
+        if (p.id !== draftId) return p;
+        if (field === 'nominal') {
+          const num = parseInt(value.replace(/[^\d]/g, ''), 10);
+          return { ...p, nominal: isNaN(num) ? '' : num };
+        }
+        return { ...p, label: value };
+      })
+    );
   };
 
   const handleDeleteWaiver = (waiverId: string) => {
@@ -240,19 +300,29 @@ export const SantriDetailPage: React.FC = () => {
               </span>
             )}
 
-            {santri.status_syahriyah === 'Bebas' ? (
-              <span className="px-2 py-0.5 rounded-md font-semibold bg-slate-800 text-slate-100 border border-slate-700">
-                Bebas Syahriyah
-              </span>
-            ) : santri.status_syahriyah === 'Keringanan' ? (
-              <span className="px-2 py-0.5 rounded-md font-semibold bg-purple-100 text-purple-800 border border-purple-300">
-                Keringanan 50%
-              </span>
-            ) : (
-              <span className="px-2 py-0.5 rounded-md font-semibold bg-slate-100 text-slate-700 border border-slate-200">
-                Syahriyah Normal
-              </span>
-            )}
+            {(() => {
+              const eff = computeEffectiveSyahriyah(
+                getTarifSyahriyah(santri.kategori),
+                new Date().getMonth() + 1,
+                waivers.filter((w) => w.tahun === new Date().getFullYear()),
+                santri.status_syahriyah || 'Normal'
+              );
+              const isCustom = eff.jenisEfektif === 'Keringanan Custom';
+              const isSebagianPeriode = eff.jenisEfektif === 'Keringanan Sebagian' && Boolean(eff.waiver);
+              const badgeClass =
+                eff.jenisEfektif === 'Bebas'
+                  ? 'bg-slate-800 text-slate-100 border-slate-700'
+                  : isCustom
+                  ? 'bg-purple-100 text-purple-800 border-purple-300'
+                  : isSebagianPeriode
+                  ? 'bg-purple-50 text-purple-700 border-purple-200'
+                  : 'bg-slate-100 text-slate-700 border-slate-200';
+              return (
+                <span className={`px-2 py-0.5 rounded-md font-semibold text-[11px] border ${badgeClass}`}>
+                  {getEffectiveStatusLabel(eff)}
+                </span>
+              );
+            })()}
 
             {santri.status === 'Aktif' ? (
               <span className="px-2 py-0.5 rounded-md font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
@@ -443,20 +513,42 @@ export const SantriDetailPage: React.FC = () => {
                       className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 bg-slate-50 border border-slate-200 rounded-xl text-xs"
                     >
                       <div className="space-y-1">
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                           <span className="font-bold text-[#0F172A]">
                             Tahun {w.tahun} ({BULAN_NAMES[w.bulan_mulai]} - {BULAN_NAMES[w.bulan_selesai]})
                           </span>
-                          {w.jenis === 'Bebas' ? (
-                            <span className="px-2 py-0.5 rounded font-bold bg-slate-800 text-slate-100 text-[10px]">
-                              Bebas Syahriyah (Gratis)
-                            </span>
-                          ) : (
-                            <span className="px-2 py-0.5 rounded font-bold bg-purple-100 text-purple-800 text-[10px]">
-                              Keringanan 50%
-                            </span>
-                          )}
+                          <span
+                            className={`px-2 py-0.5 rounded font-bold text-[10px] ${
+                              w.jenis === 'Bebas'
+                                ? 'bg-slate-800 text-slate-100'
+                                : w.jenis === 'Keringanan Custom'
+                                ? 'bg-purple-100 text-purple-800'
+                                : 'bg-purple-50 text-purple-700'
+                            }`}
+                          >
+                            {getWaiverJenisLabel(w)}
+                          </span>
                         </div>
+
+                        {w.jenis === 'Keringanan Custom' && w.potongan && w.potongan.length > 0 && (
+                          <ul className="mt-1 space-y-0.5">
+                            {(() => {
+                              const baseTarif = getTarifSyahriyah(santri.kategori);
+                              return (
+                                <>
+                                  <li className="text-[11px] text-slate-600">
+                                    Tarif dasar: <strong>{formatRupiah(baseTarif)}</strong>/bulan — Potongan:{' '}
+                                    {w.potongan.map((p) => `${p.label} (${formatRupiah(p.nominal)})`).join(' + ')}
+                                  </li>
+                                  <li className="text-[11px] text-purple-700 font-semibold">
+                                    Tagihan efektif: {formatRupiah(Math.max(1000, baseTarif - w.potongan.reduce((s, p) => s + p.nominal, 0)))}/bulan
+                                  </li>
+                                </>
+                              );
+                            })()}
+                          </ul>
+                        )}
+
                         {w.keterangan && (
                           <p className="text-slate-600 text-[11px] italic">Keterangan: {w.keterangan}</p>
                         )}
@@ -573,13 +665,122 @@ export const SantriDetailPage: React.FC = () => {
                 <label className="block font-semibold text-slate-700 mb-1">Jenis Keringanan</label>
                 <select
                   value={waiverJenis}
-                  onChange={(e) => setWaiverJenis(e.target.value as any)}
+                  onChange={(e) => {
+                    const jenis = e.target.value as JenisWaiver;
+                    setWaiverJenis(jenis);
+                    if (jenis === 'Keringanan Custom' && potonganDrafts.length === 0) {
+                      handleAddPotonganItem();
+                    }
+                  }}
                   className="w-full px-3 py-2 border rounded-xl outline-none focus:border-[#059669]"
                 >
-                  <option value="Bebas">Bebas Syahriyah (Gratis 100% / Rp 0)</option>
-                  <option value="Keringanan">Keringanan Sebagian (Diskon 50%)</option>
+                  <option value="Bebas">Bebas Syahriyah (Gratis Penuh / Rp 0)</option>
+                  <option value="Keringanan Sebagian">Keringanan Sebagian (Diskon 50%)</option>
+                  <option value="Keringanan Custom">
+                    Keringanan Custom (Nominal Tetap — Potong Item, bukan Pembebasan)
+                  </option>
                 </select>
+
+                {waiverJenis === 'Keringanan Custom' && (
+                  <p className="mt-1.5 text-[11px] text-purple-700 bg-purple-50 border border-purple-200 rounded-lg p-2">
+                    Pada bulan di rentang periode ini, tagihan tidak digratiskan, melainkan tarif dasar
+                    dikurangi total item potongan di bawah (tetap ada nominal yang harus dibayar).
+                  </p>
+                )}
               </div>
+
+              {waiverJenis === 'Keringanan Custom' && (
+                <div className="space-y-2 bg-purple-50/50 border border-purple-200 rounded-xl p-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-purple-900 uppercase tracking-wide">
+                      Item Potongan (per bulan)
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleAddPotonganItem}
+                      className="inline-flex items-center gap-1 text-[11px] font-semibold text-purple-800 hover:underline"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      Tambah Item
+                    </button>
+                  </div>
+
+                  {potonganDrafts.map((p) => (
+                    <div key={p.id} className="flex items-center gap-2">
+                      <select
+                        value={PRESET_POTONGAN.includes(p.label) ? p.label : '__custom__'}
+                        onChange={(e) =>
+                          handlePotonganChange(
+                            p.id,
+                            'label',
+                            e.target.value === '__custom__' ? '' : e.target.value
+                          )
+                        }
+                        className="flex-1 px-2 py-1.5 border rounded-lg outline-none focus:border-[#059669] bg-white text-xs"
+                      >
+                        {PRESET_POTONGAN.map((preset) => (
+                          <option key={preset} value={preset}>
+                            {preset}
+                          </option>
+                        ))}
+                        <option value="__custom__">Lainnya (tulis manual)</option>
+                      </select>
+
+                      {!PRESET_POTONGAN.includes(p.label) && (
+                        <input
+                          type="text"
+                          value={p.label}
+                          onChange={(e) => handlePotonganChange(p.id, 'label', e.target.value)}
+                          placeholder="Nama potongan"
+                          className="flex-1 px-2 py-1.5 border rounded-lg outline-none focus:border-[#059669] bg-white text-xs"
+                        />
+                      )}
+
+                      <div className="w-28 relative">
+                        <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] text-slate-400 font-semibold">
+                          Rp
+                        </span>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          value={p.nominal === '' ? '' : p.nominal.toLocaleString('id-ID')}
+                          onChange={(e) => handlePotonganChange(p.id, 'nominal', e.target.value)}
+                          placeholder="0"
+                          className="w-full pl-7 pr-2 py-1.5 border rounded-lg outline-none focus:border-[#059669] bg-white text-xs text-right font-semibold"
+                        />
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => handleRemovePotonganItem(p.id)}
+                        className="p-1.5 text-slate-400 hover:text-red-600 transition-colors shrink-0"
+                        aria-label="Hapus item potongan"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+
+                  {(() => {
+                    const baseTarif = santri ? getTarifSyahriyah(santri.kategori) : 150000;
+                    const totalPotongan = potonganDrafts.reduce(
+                      (sum, p) => sum + (Number(p.nominal) || 0),
+                      0
+                    );
+                    const efektif = Math.max(0, baseTarif - totalPotongan);
+                    return (
+                      <div className="pt-2 border-t border-purple-200 flex items-center justify-between text-[11px]">
+                        <span className="text-slate-600">
+                          Tarif dasar {santri?.kategori}: <strong>{formatRupiah(baseTarif)}</strong>
+                        </span>
+                        <span className="font-bold text-purple-800">
+                          Tagihan efektif: {formatRupiah(efektif)} /bulan
+                        </span>
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
 
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">Keterangan / Alasan (Opsional)</label>

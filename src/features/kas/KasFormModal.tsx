@@ -4,7 +4,7 @@ import { JenisKas } from '../../types/kas';
 import { kasService } from '../../lib/kasService';
 import { showToast } from '../../components/ui/Toast';
 import { formatThousand, parseThousand } from '../../lib/formatter';
-import { KATEGORI_PEMASUKAN, KATEGORI_PENGELUARAN } from '../../lib/constants';
+import { getKategoriByJenis } from '../../lib/kategoriKasService';
 
 interface KasFormModalProps {
   isOpen: boolean;
@@ -33,7 +33,13 @@ export const KasFormModal: React.FC<KasFormModalProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  const kategoriOptions = jenis === 'Pemasukan' ? KATEGORI_PEMASUKAN : KATEGORI_PENGELUARAN;
+  // Kategori diambil dari localStorage 'al_hidayah_kategori_kas' (sinkron dgn Pengaturan),
+  // dengan fallback default jika data kosong.
+  const [kategoriOptions, setKategoriOptions] = useState<string[]>(() => getKategoriByJenis('Pemasukan'));
+
+  useEffect(() => {
+    setKategoriOptions(getKategoriByJenis(jenis));
+  }, [jenis]);
 
   useEffect(() => {
     if (isOpen) {

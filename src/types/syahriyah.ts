@@ -13,6 +13,8 @@ export interface SyahriyahItemInput {
   bulan: number;
   nominal: number;
   jenis: 'Penuh' | 'Sebagian';
+  /** Potongan keringanan custom yang berlaku pada bulan ini (hanya bila status Keringanan Custom) */
+  potongan?: { label: string; nominal: number }[];
 }
 
 export interface IuranTambahanInput {

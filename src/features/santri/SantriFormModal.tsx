@@ -425,8 +425,8 @@ export const SantriFormModal: React.FC<SantriFormModalProps> = ({
             <div role="radiogroup" aria-label="Status Syahriyah" className="grid grid-cols-3 gap-2.5">
               {[
                 { value: 'Normal', label: 'Normal (Bayar)' },
-                { value: 'Bebas', label: 'Bebas Syahriyah' },
-                { value: 'Keringanan', label: 'Keringanan (50%)' },
+                { value: 'Bebas', label: 'Bebas Se-full' },
+                { value: 'Keringanan', label: 'Keringanan Se-full' },
               ].map((opt) => {
                 const isSelected = statusSyahriyah === opt.value;
                 return (

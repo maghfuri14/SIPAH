@@ -23,6 +23,8 @@ import {
   getTarifSyahriyah,
 } from '../../lib/syahriyahService';
 import { santriService } from '../../lib/santriService';
+import { waiverService } from '../../lib/waiverService';
+import { computeEffectiveSyahriyah } from '../../lib/syahriyahTarif';
 import { showToast } from '../../components/ui/Toast';
 import { formatRupiah, formatThousand, parseThousand } from '../../lib/formatter';
 import { generateKwitansiPdf, printKwitansiHtml } from '../../lib/pdfHelper';
@@ -132,7 +134,18 @@ export const SyahriyahPaymentModal: React.FC<SyahriyahPaymentModalProps> = ({
           ) {
             const targetRec = row.records.find((r) => r.bulan === bulanAktif);
             if (targetRec && targetRec.status !== 'Lunas') {
-              const sisa = targetRec.nominal_tagihan - targetRec.total_dibayar;
+              const baseTarif = getTarifSyahriyah(selectedSantri.kategori);
+              const effWaivers = waiverService
+                .getWaiversForSantri(selectedSantri.id)
+                .filter((w) => w.tahun === selectedYear);
+              const eff = computeEffectiveSyahriyah(
+                baseTarif,
+                bulanAktif,
+                effWaivers,
+                selectedSantri.status_syahriyah || 'Normal'
+              );
+              const tagihanEfektif = eff.nominalTagihan > 0 ? eff.nominalTagihan : baseTarif;
+              const sisa = Math.max(tagihanEfektif - targetRec.total_dibayar, 0) || tagihanEfektif;
               const key = `${selectedYear}-${bulanAktif}`;
               setItemInputs({
                 [key]: {
@@ -140,6 +153,7 @@ export const SyahriyahPaymentModal: React.FC<SyahriyahPaymentModalProps> = ({
                   bulan: bulanAktif,
                   nominal: sisa,
                   jenis: 'Penuh',
+                  potongan: eff.jenisEfektif === 'Keringanan Custom' ? eff.potongan : undefined,
                 },
               });
             }
@@ -163,8 +177,20 @@ export const SyahriyahPaymentModal: React.FC<SyahriyahPaymentModalProps> = ({
         return copy;
       });
     } else {
-      // Add selection
-      const sisa = rec.nominal_tagihan - rec.total_dibayar;
+      // Add selection — nominal "Penuh" memakai tarif efektif bulan tersebut
+      // (sudah terpotong keringanan custom/50% bila ada)
+      const baseTarif = selectedSantri ? getTarifSyahriyah(selectedSantri.kategori) : 150000;
+      const waivers = selectedSantri
+        ? waiverService.getWaiversForSantri(selectedSantri.id).filter((w) => w.tahun === selectedYear)
+        : [];
+      const eff = computeEffectiveSyahriyah(
+        baseTarif,
+        bulan,
+        waivers,
+        selectedSantri?.status_syahriyah || 'Normal'
+      );
+      const tagihanEfektif = eff.nominalTagihan > 0 ? eff.nominalTagihan : baseTarif;
+      const sisa = Math.max(tagihanEfektif - rec.total_dibayar, 0) || tagihanEfektif;
       setItemInputs((prev) => ({
         ...prev,
         [key]: {
@@ -172,6 +198,7 @@ export const SyahriyahPaymentModal: React.FC<SyahriyahPaymentModalProps> = ({
           bulan,
           nominal: sisa,
           jenis: 'Penuh',
+          potongan: eff.jenisEfektif === 'Keringanan Custom' ? eff.potongan : undefined,
         },
       }));
     }
@@ -182,8 +209,20 @@ export const SyahriyahPaymentModal: React.FC<SyahriyahPaymentModalProps> = ({
     const item = itemInputs[key];
     if (!item) return;
 
-    const tarif = selectedSantri ? getTarifSyahriyah(selectedSantri.kategori) : 150000;
-    const sisa = item.nominal || tarif;
+    const rec = currentYearRecords.find((r) => r.bulan === item.bulan);
+    const baseTarif = selectedSantri ? getTarifSyahriyah(selectedSantri.kategori) : 150000;
+    const waivers = selectedSantri
+      ? waiverService.getWaiversForSantri(selectedSantri.id).filter((w) => w.tahun === item.tahun)
+      : [];
+    const eff = computeEffectiveSyahriyah(
+      baseTarif,
+      item.bulan,
+      waivers,
+      selectedSantri?.status_syahriyah || 'Normal'
+    );
+    const tagihanEfektif = eff.nominalTagihan > 0 ? eff.nominalTagihan : baseTarif;
+    const sudahBayar = rec ? rec.total_dibayar : 0;
+    const sisa = Math.max(tagihanEfektif - sudahBayar, 0) || item.nominal || tagihanEfektif;
 
     setItemInputs((prev) => ({
       ...prev,
@@ -191,6 +230,7 @@ export const SyahriyahPaymentModal: React.FC<SyahriyahPaymentModalProps> = ({
         ...prev[key],
         jenis,
         nominal: jenis === 'Penuh' ? sisa : Math.floor(sisa / 2) || 50000,
+        potongan: eff.jenisEfektif === 'Keringanan Custom' ? eff.potongan : undefined,
       },
     }));
   };
@@ -525,6 +565,38 @@ export const SyahriyahPaymentModal: React.FC<SyahriyahPaymentModalProps> = ({
                     <p className="text-slate-500">
                       Tarif Iuran: <strong className="text-slate-700">{formatRupiah(tarifBulan)}</strong> / bulan
                     </p>
+                    {(() => {
+                      const waiversNow = waiverService
+                        .getWaiversForSantri(selectedSantri.id)
+                        .filter((w) => w.tahun === selectedYear);
+                      const effNow = computeEffectiveSyahriyah(
+                        tarifBulan,
+                        new Date().getMonth() + 1,
+                        waiversNow,
+                        selectedSantri.status_syahriyah || 'Normal'
+                      );
+                      if (effNow.jenisEfektif === 'Keringanan Custom') {
+                        return (
+                          <p className="text-[11px] text-purple-700 font-semibold flex items-center gap-1 flex-wrap">
+                            <span className="px-1.5 py-0.5 rounded bg-purple-100 border border-purple-200">
+                              Keringanan Custom berlaku
+                            </span>
+                            <span>
+                              tarif efektif bulan ini:{' '}
+                              <strong>{formatRupiah(effNow.nominalTagihan)}</strong>
+                            </span>
+                          </p>
+                        );
+                      }
+                      if (effNow.jenisEfektif === 'Bebas') {
+                        return (
+                          <p className="text-[11px] text-slate-600 font-semibold">
+                            Bulan ini bebas syahriyah — tidak dapat dicatat sebagai pembayaran.
+                          </p>
+                        );
+                      }
+                      return null;
+                    })()}
                   </div>
 
                   {!initialSantri && (
@@ -656,6 +728,13 @@ export const SyahriyahPaymentModal: React.FC<SyahriyahPaymentModalProps> = ({
                               </div>
 
                               <div className="flex items-center gap-3">
+                                {item.potongan && item.potongan.length > 0 ? (
+                                  <span className="px-2 py-1 rounded border border-purple-200 bg-purple-50 text-purple-800 font-semibold text-[11px] leading-tight">
+                                    Keringanan Custom:{' '}
+                                    {item.potongan.map((p) => p.label).join(', ')}{' '}
+                                    (-{formatRupiah(item.potongan.reduce((s, p) => s + p.nominal, 0))})
+                                  </span>
+                                ) : (
                                 <div className="flex items-center gap-2 bg-white px-2 py-1 rounded border border-slate-200">
                                   <label className="flex items-center gap-1 cursor-pointer font-medium text-slate-700">
                                     <input
@@ -678,6 +757,7 @@ export const SyahriyahPaymentModal: React.FC<SyahriyahPaymentModalProps> = ({
                                     Sebagian
                                   </label>
                                 </div>
+                                )}
 
                                 <div className="w-32">
                                   <input

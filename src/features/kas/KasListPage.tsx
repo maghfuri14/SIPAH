@@ -17,7 +17,7 @@ import { KasFormModal } from './KasFormModal';
 import { ToastContainer, showToast } from '../../components/ui/Toast';
 import { authStore } from '../../store/authStore';
 import { formatRupiah } from '../../lib/formatter';
-import { KATEGORI_PEMASUKAN, KATEGORI_PENGELUARAN } from '../../lib/constants';
+import { getKategoriKas } from '../../lib/kategoriKasService';
 
 export const KasListPage: React.FC = () => {
   const user = authStore.getUser();
@@ -33,6 +33,9 @@ export const KasListPage: React.FC = () => {
   const [filterKategori, setFilterKategori] = useState<string>('Semua');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+
+  // Daftar kategori sinkron dari localStorage 'al_hidayah_kategori_kas' (dengan fallback default)
+  const kategoriKasConfig = useMemo(() => getKategoriKas(), []);
 
   // Modal states
   const [modalOpen, setModalOpen] = useState(false);
@@ -258,23 +261,25 @@ export const KasListPage: React.FC = () => {
             >
               <option value="Semua">Semua Kategori</option>
               {filterJenis === 'Pemasukan' &&
-                KATEGORI_PEMASUKAN.map((cat) => (
+                kategoriKasConfig.pemasukan.map((cat) => (
                   <option key={cat} value={cat}>
                     {cat}
                   </option>
                 ))}
               {filterJenis === 'Pengeluaran' &&
-                KATEGORI_PENGELUARAN.map((cat) => (
+                kategoriKasConfig.pengeluaran.map((cat) => (
                   <option key={cat} value={cat}>
                     {cat}
                   </option>
                 ))}
               {filterJenis === 'Semua' &&
-                Array.from(new Set([...KATEGORI_PEMASUKAN, ...KATEGORI_PENGELUARAN])).map((cat) => (
-                  <option key={cat} value={cat}>
-                    {cat}
-                  </option>
-                ))}
+                Array.from(new Set([...kategoriKasConfig.pemasukan, ...kategoriKasConfig.pengeluaran])).map(
+                  (cat) => (
+                    <option key={cat} value={cat}>
+                      {cat}
+                    </option>
+                  )
+                )}
             </select>
           </div>
 

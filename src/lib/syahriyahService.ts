@@ -10,6 +10,7 @@ import { Santri } from '../types/santri';
 import { santriService } from './santriService';
 import { kasService } from './kasService';
 import { waiverService } from './waiverService';
+import { computeEffectiveSyahriyah } from './syahriyahTarif';
 
 const STORAGE_KEY = 'al_hidayah_syahriyah';
 const TRANSAKSI_KEY = 'al_hidayah_syahriyah_transaksi';
@@ -44,10 +45,10 @@ export function generateMockSyahriyah(
   const charCodeSum = santriId.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
 
   for (let bulan = 1; bulan <= 12; bulan++) {
-    const waiver = waivers.find((w) => bulan >= w.bulan_mulai && bulan <= w.bulan_selesai);
-    const effectiveStatus = waiver ? waiver.jenis : statusSyahriyah;
+    const eff = computeEffectiveSyahriyah(baseTarif, bulan, waivers, statusSyahriyah);
+    const nominalTagihan = eff.nominalTagihan;
 
-    if (effectiveStatus === 'Bebas') {
+    if (eff.jenisEfektif === 'Bebas') {
       result.push({
         tahun,
         bulan,
@@ -56,11 +57,6 @@ export function generateMockSyahriyah(
         status: 'Bebas',
       });
       continue;
-    }
-
-    let nominalTagihan = baseTarif;
-    if (effectiveStatus === 'Keringanan') {
-      nominalTagihan = Math.floor(baseTarif / 2);
     }
 
     if (tahun !== 2025) {
@@ -162,26 +158,19 @@ export const syahriyahService = {
       const santriWaivers = allWaivers.filter((w) => w.santri_id === s.id && w.tahun === tahun);
       const baseTarif = getTarifSyahriyah(s.kategori);
 
-      const getMonthWaiver = (bulan: number) => {
-        const found = santriWaivers.find(
-          (w) => bulan >= w.bulan_mulai && bulan <= w.bulan_selesai
-        );
-        if (found) return found.jenis;
-        return null;
-      };
-
       if (stored[s.id] && stored[s.id][tahun]) {
         records = stored[s.id][tahun].map((r) => {
-          const wJenis = getMonthWaiver(r.bulan);
-          const effectiveStatus = wJenis || s.status_syahriyah || 'Normal';
+          const eff = computeEffectiveSyahriyah(
+            baseTarif,
+            r.bulan,
+            santriWaivers,
+            s.status_syahriyah || 'Normal'
+          );
 
-          if (effectiveStatus === 'Bebas') {
+          if (eff.jenisEfektif === 'Bebas') {
             return { ...r, nominal_tagihan: 0, status: 'Bebas' as const };
-          } else if (effectiveStatus === 'Keringanan') {
-            const reduced = Math.floor(baseTarif / 2);
-            return { ...r, nominal_tagihan: reduced };
           }
-          return { ...r, nominal_tagihan: baseTarif };
+          return { ...r, nominal_tagihan: eff.nominalTagihan };
         });
       } else {
         records = generateMockSyahriyah(
@@ -242,17 +231,31 @@ export const syahriyahService = {
       if (index !== -1) {
         const currentRecord = yearRecords[index];
         if (currentRecord.status === 'Bebas') {
-          throw new Error(`Bulan ${item.bulan} tahun ${item.tahun} bebas dari pembayaran syahriyah`);
+          throw new Error(
+            `Bulan ${item.bulan} tahun ${item.tahun} bebas dari pembayaran syahriyah. Untuk keringanan dengan nominal tetap, gunakan jenis "Keringanan Custom" pada halaman detail santri.`
+          );
         }
 
-        const newTotalDibayar = currentRecord.total_dibayar + item.nominal;
+        const effectiveNominal = currentRecord.nominal_tagihan;
+        const maxBayarBulanIni = Math.max(0, effectiveNominal - currentRecord.total_dibayar);
+        const dibayarAktual = Math.min(item.nominal, maxBayarBulanIni);
+        if (dibayarAktual <= 0) {
+          throw new Error(
+            `Tagihan bulan ${item.bulan} tahun ${item.tahun} sudah lunas (tarif efektif: ${effectiveNominal}).`
+          );
+        }
+
+        const newTotalDibayar = currentRecord.total_dibayar + dibayarAktual;
         let newStatus: StatusSyahriyah = 'Belum';
 
-        if (newTotalDibayar >= currentRecord.nominal_tagihan) {
+        if (newTotalDibayar >= effectiveNominal) {
           newStatus = 'Lunas';
         } else if (newTotalDibayar > 0) {
           newStatus = 'Sebagian';
         }
+
+        // Simpan nominal yang benar-benar terbayar agar total kas konsisten
+        item.nominal = dibayarAktual;
 
         yearRecords[index] = {
           ...currentRecord,
@@ -265,7 +268,7 @@ export const syahriyahService = {
 
     saveMatrixData(storedMatrix);
 
-    // 2. Calculate Total Payment
+    // 2. Calculate Total Payment (berdasarkan nominal aktual yang tersimpan di matriks)
     const totalItems = items.reduce((sum, i) => sum + i.nominal, 0);
     const totalIuranLain = (transaksiData.iuran_tambahan || []).reduce(
       (sum, i) => sum + i.nominal,
