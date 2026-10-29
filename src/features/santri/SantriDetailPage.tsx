@@ -12,18 +12,41 @@ import {
   AlertCircle,
   ChevronLeft,
   ChevronRight,
+  Plus,
+  Trash2,
+  ShieldAlert,
+  Info,
+  CheckCircle2,
 } from 'lucide-react';
 import { Santri } from '../../types/santri';
 import { santriService } from '../../lib/santriService';
+import { waiverService, SyahriyahWaiver } from '../../lib/waiverService';
 import { SantriFormModal } from './SantriFormModal';
 import { authStore } from '../../store/authStore';
 
 type ActiveTab = 'profil' | 'syahriyah' | 'kilatan' | 'timeline';
 
+const BULAN_NAMES = [
+  '',
+  'Januari',
+  'Februari',
+  'Maret',
+  'April',
+  'Mei',
+  'Juni',
+  'Juli',
+  'Agustus',
+  'September',
+  'Oktober',
+  'November',
+  'Desember',
+];
+
 export const SantriDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const user = authStore.getUser();
+  const isAdmin = user?.role === 'super_admin' || user?.role === 'admin';
   const isPemilik = user?.role === 'pemilik';
 
   const [santri, setSantri] = useState<Santri | null>(null);
@@ -31,6 +54,22 @@ export const SantriDetailPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<ActiveTab>('profil');
   const [editModalOpen, setEditModalOpen] = useState(false);
   const tabContainerRef = useRef<HTMLDivElement>(null);
+
+  // Waiver states
+  const [waivers, setWaivers] = useState<SyahriyahWaiver[]>([]);
+  const [waiverModalOpen, setWaiverModalOpen] = useState(false);
+  const [waiverTahun, setWaiverTahun] = useState<number>(new Date().getFullYear());
+  const [waiverBulanMulai, setWaiverBulanMulai] = useState<number>(1);
+  const [waiverBulanSelesai, setWaiverBulanSelesai] = useState<number>(12);
+  const [waiverJenis, setWaiverJenis] = useState<'Bebas' | 'Keringanan'>('Bebas');
+  const [waiverKeterangan, setWaiverKeterangan] = useState('');
+
+  // Toast
+  const [toastMsg, setToastMsg] = useState<string | null>(null);
+  const showToast = (msg: string) => {
+    setToastMsg(msg);
+    setTimeout(() => setToastMsg(null), 3000);
+  };
 
   const scrollTabs = (direction: 'left' | 'right') => {
     if (tabContainerRef.current) {
@@ -45,6 +84,7 @@ export const SantriDetailPage: React.FC = () => {
     try {
       const data = await santriService.getSantriById(id);
       setSantri(data);
+      setWaivers(waiverService.getWaiversForSantri(id));
     } catch {
       setSantri(null);
     } finally {
@@ -55,6 +95,46 @@ export const SantriDetailPage: React.FC = () => {
   useEffect(() => {
     loadData();
   }, [id]);
+
+  const handleAddWaiver = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!isAdmin) {
+      showToast('Akses ditolak: Hanya Admin yang dapat mengatur keringanan biaya.');
+      return;
+    }
+    if (!id) return;
+
+    if (waiverBulanMulai > waiverBulanSelesai) {
+      showToast('Bulan mulai tidak boleh lebih besar dari bulan selesai.');
+      return;
+    }
+
+    waiverService.addWaiver({
+      santri_id: id,
+      tahun: Number(waiverTahun),
+      bulan_mulai: Number(waiverBulanMulai),
+      bulan_selesai: Number(waiverBulanSelesai),
+      jenis: waiverJenis,
+      keterangan: waiverKeterangan.trim() || undefined,
+    });
+
+    setWaivers(waiverService.getWaiversForSantri(id));
+    setWaiverModalOpen(false);
+    setWaiverKeterangan('');
+    showToast('Pembebasan/keringanan periode berhasil ditambahkan.');
+  };
+
+  const handleDeleteWaiver = (waiverId: string) => {
+    if (!isAdmin) {
+      showToast('Akses ditolak: Hanya Admin yang dapat menghapus keringanan biaya.');
+      return;
+    }
+    if (window.confirm('Yakin ingin menghapus periode keringanan ini?')) {
+      waiverService.deleteWaiver(waiverId);
+      if (id) setWaivers(waiverService.getWaiversForSantri(id));
+      showToast('Periode keringanan berhasil dihapus.');
+    }
+  };
 
   const formatDate = (dateStr: string) => {
     if (!dateStr) return '-';
@@ -100,6 +180,14 @@ export const SantriDetailPage: React.FC = () => {
 
   return (
     <div className="max-w-4xl mx-auto space-y-4 sm:space-y-6 pb-12">
+      {/* Toast Notification */}
+      {toastMsg && (
+        <div className="fixed top-5 right-5 z-50 bg-emerald-600 text-white px-4 py-2.5 rounded-xl shadow-lg border border-emerald-500 text-xs font-semibold flex items-center gap-2 animate-in fade-in">
+          <CheckCircle2 className="w-4 h-4 shrink-0" />
+          <span>{toastMsg}</span>
+        </div>
+      )}
+
       {/* Top Header Row with Kembali and Compact Edit */}
       <div className="flex items-center justify-between gap-4">
         <button
@@ -110,13 +198,13 @@ export const SantriDetailPage: React.FC = () => {
           <span>Kembali</span>
         </button>
 
-        {!isPemilik && (
+        {isAdmin && (
           <button
             onClick={() => setEditModalOpen(true)}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 hover:bg-slate-50 text-slate-700 text-xs font-semibold transition-colors shadow-xs"
           >
             <Edit className="w-3.5 h-3.5 text-slate-500" />
-            <span>Edit</span>
+            <span>Edit Santri</span>
           </button>
         )}
       </div>
@@ -152,6 +240,20 @@ export const SantriDetailPage: React.FC = () => {
               </span>
             )}
 
+            {santri.status_syahriyah === 'Bebas' ? (
+              <span className="px-2 py-0.5 rounded-md font-semibold bg-slate-800 text-slate-100 border border-slate-700">
+                Bebas Syahriyah
+              </span>
+            ) : santri.status_syahriyah === 'Keringanan' ? (
+              <span className="px-2 py-0.5 rounded-md font-semibold bg-purple-100 text-purple-800 border border-purple-300">
+                Keringanan 50%
+              </span>
+            ) : (
+              <span className="px-2 py-0.5 rounded-md font-semibold bg-slate-100 text-slate-700 border border-slate-200">
+                Syahriyah Normal
+              </span>
+            )}
+
             {santri.status === 'Aktif' ? (
               <span className="px-2 py-0.5 rounded-md font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
                 Aktif
@@ -161,16 +263,12 @@ export const SantriDetailPage: React.FC = () => {
                 Tidak Aktif
               </span>
             )}
-
-            <span className="text-slate-300 hidden sm:inline">·</span>
-            <span className="text-slate-500 font-medium">Masuk: {formatDate(santri.tanggal_masuk)}</span>
           </div>
         </div>
       </div>
 
       {/* Inline Symmetrical Tab Header Navigation */}
       <div className="flex items-center justify-between gap-1 sm:gap-2 w-full border-b border-slate-200 group">
-        {/* Tombol Kiri */}
         <button
           type="button"
           onClick={() => scrollTabs('left')}
@@ -181,14 +279,13 @@ export const SantriDetailPage: React.FC = () => {
           <ChevronLeft className="w-4 h-4" />
         </button>
 
-        {/* Area Tab (Scrollable) */}
         <div
           ref={tabContainerRef}
           className="flex items-center gap-4 sm:gap-6 overflow-x-auto text-sm font-medium whitespace-nowrap no-scrollbar [&::-webkit-scrollbar]:hidden [scrollbar-width:none] flex-1 px-2 scroll-smooth"
         >
           {[
             { key: 'profil', label: 'Profil Lengkap', icon: User },
-            { key: 'syahriyah', label: 'Riwayat Syahriyah', icon: CreditCard },
+            { key: 'syahriyah', label: 'Riwayat & Keringanan Syahriyah', icon: CreditCard },
             { key: 'kilatan', label: 'Riwayat Kilatan', icon: History },
             { key: 'timeline', label: 'Timeline', icon: Clock },
           ].map((tab) => {
@@ -199,7 +296,7 @@ export const SantriDetailPage: React.FC = () => {
                 key={tab.key}
                 type="button"
                 onClick={() => setActiveTab(tab.key as ActiveTab)}
-                className={`pb-3 inline-flex items-center gap-2 transition-colors border-b-2 font-semibold whitespace-nowrap ${
+                className={`pb-3 inline-flex items-center gap-2 transition-colors border-b-2 font-semibold whitespace-nowrap cursor-pointer ${
                   isActive
                     ? 'border-[#059669] text-[#059669]'
                     : 'border-transparent text-[#64748B] hover:text-[#0F172A]'
@@ -212,7 +309,6 @@ export const SantriDetailPage: React.FC = () => {
           })}
         </div>
 
-        {/* Tombol Kanan */}
         <button
           type="button"
           onClick={() => scrollTabs('right')}
@@ -293,12 +389,103 @@ export const SantriDetailPage: React.FC = () => {
         )}
 
         {activeTab === 'syahriyah' && (
-          <div className="bg-white border border-[#E2E8F0] rounded-2xl p-8 sm:p-12 text-center shadow-xs">
-            <CreditCard className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-            <h3 className="text-base font-semibold text-[#0F172A] mb-1">Riwayat Syahriyah</h3>
-            <p className="text-xs text-slate-500 max-w-sm mx-auto">
-              Kelola dan catat transaksi pembayaran syahriyah santri di modul Syahriyah.
-            </p>
+          <div className="space-y-6">
+            {/* Role Notice */}
+            {!isAdmin && (
+              <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-start gap-3 text-amber-800 text-xs">
+                <ShieldAlert className="w-5 h-5 shrink-0 text-amber-600 mt-0.5" />
+                <div>
+                  <span className="font-bold block mb-0.5">Mode Lihat (Read-Only)</span>
+                  Anda masuk sebagai Pengasuh / Pemilik. Sesuai aturan sistem, hanya Admin yang dapat mengatur atau mengubah pembebasan biaya dan keringanan syahriyah.
+                </div>
+              </div>
+            )}
+
+            {/* Pembebasan / Keringanan Periode Card */}
+            <div className="bg-white border border-[#E2E8F0] rounded-2xl p-5 sm:p-6 shadow-xs space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
+                <div>
+                  <h3 className="text-sm font-bold text-[#0F172A]">
+                    Pengaturan Periode Pembebasan & Keringanan Syahriyah
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Atur status bebas atau diskon 50% untuk rentang bulan tertentu di tahun tertentu.
+                  </p>
+                </div>
+
+                {isAdmin ? (
+                  <button
+                    type="button"
+                    onClick={() => setWaiverModalOpen(true)}
+                    className="px-3.5 py-2 bg-[#059669] hover:bg-[#047857] text-white text-xs font-semibold rounded-xl transition-colors shadow-xs inline-flex items-center gap-1.5 shrink-0 cursor-pointer"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>+ Tambah Periode Keringanan</span>
+                  </button>
+                ) : (
+                  <span className="px-3 py-1.5 bg-slate-100 text-slate-500 text-xs font-semibold rounded-xl inline-flex items-center gap-1.5 cursor-not-allowed">
+                    <Info className="w-3.5 h-3.5" />
+                    Hanya Admin yang dapat menambah
+                  </span>
+                )}
+              </div>
+
+              {/* List of Waivers */}
+              <div className="space-y-3">
+                {waivers.length === 0 ? (
+                  <div className="text-center py-8 text-slate-400 text-xs bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                    Belum ada aturan periode keringanan khusus untuk santri ini. Mengikuti status global santri.
+                  </div>
+                ) : (
+                  waivers.map((w) => (
+                    <div
+                      key={w.id}
+                      className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 bg-slate-50 border border-slate-200 rounded-xl text-xs"
+                    >
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-[#0F172A]">
+                            Tahun {w.tahun} ({BULAN_NAMES[w.bulan_mulai]} - {BULAN_NAMES[w.bulan_selesai]})
+                          </span>
+                          {w.jenis === 'Bebas' ? (
+                            <span className="px-2 py-0.5 rounded font-bold bg-slate-800 text-slate-100 text-[10px]">
+                              Bebas Syahriyah (Gratis)
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 rounded font-bold bg-purple-100 text-purple-800 text-[10px]">
+                              Keringanan 50%
+                            </span>
+                          )}
+                        </div>
+                        {w.keterangan && (
+                          <p className="text-slate-600 text-[11px] italic">Keterangan: {w.keterangan}</p>
+                        )}
+                      </div>
+
+                      {isAdmin && (
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteWaiver(w.id)}
+                          className="px-2.5 py-1.5 rounded-lg border border-red-200 bg-white hover:bg-red-50 text-red-600 font-semibold inline-flex items-center gap-1 self-start sm:self-center transition-colors cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>Hapus</span>
+                        </button>
+                      )}
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            {/* Info Box */}
+            <div className="bg-white border border-[#E2E8F0] rounded-2xl p-6 text-center shadow-xs">
+              <CreditCard className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+              <h3 className="text-sm font-semibold text-[#0F172A] mb-1">Modul Rekap Transaksi</h3>
+              <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                Untuk melihat matriks lengkap dan mencatat pembayaran bulanan, silakan kunjungi menu <span className="font-semibold text-slate-700">Syahriyah</span> di sidebar.
+              </p>
+            </div>
           </div>
         )}
 
@@ -323,13 +510,117 @@ export const SantriDetailPage: React.FC = () => {
         )}
       </div>
 
+      {/* Modal Add Waiver (Admin Only) */}
+      {waiverModalOpen && isAdmin && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-xs" onClick={() => setWaiverModalOpen(false)} />
+          <div className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl p-6 z-10 space-y-4">
+            <div className="flex items-center justify-between border-b pb-3">
+              <h3 className="text-base font-bold text-[#0F172A]">Tambah Periode Keringanan Syahriyah</h3>
+              <button
+                onClick={() => setWaiverModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleAddWaiver} className="space-y-4 text-xs">
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Tahun</label>
+                <input
+                  type="number"
+                  value={waiverTahun}
+                  onChange={(e) => setWaiverTahun(Number(e.target.value))}
+                  className="w-full px-3 py-2 border rounded-xl outline-none focus:border-[#059669] font-mono"
+                  required
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Bulan Mulai</label>
+                  <select
+                    value={waiverBulanMulai}
+                    onChange={(e) => setWaiverBulanMulai(Number(e.target.value))}
+                    className="w-full px-3 py-2 border rounded-xl outline-none focus:border-[#059669]"
+                  >
+                    {BULAN_NAMES.slice(1).map((name, idx) => (
+                      <option key={idx + 1} value={idx + 1}>
+                        {idx + 1}. {name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Bulan Selesai</label>
+                  <select
+                    value={waiverBulanSelesai}
+                    onChange={(e) => setWaiverBulanSelesai(Number(e.target.value))}
+                    className="w-full px-3 py-2 border rounded-xl outline-none focus:border-[#059669]"
+                  >
+                    {BULAN_NAMES.slice(1).map((name, idx) => (
+                      <option key={idx + 1} value={idx + 1}>
+                        {idx + 1}. {name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Jenis Keringanan</label>
+                <select
+                  value={waiverJenis}
+                  onChange={(e) => setWaiverJenis(e.target.value as any)}
+                  className="w-full px-3 py-2 border rounded-xl outline-none focus:border-[#059669]"
+                >
+                  <option value="Bebas">Bebas Syahriyah (Gratis 100% / Rp 0)</option>
+                  <option value="Keringanan">Keringanan Sebagian (Diskon 50%)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Keterangan / Alasan (Opsional)</label>
+                <textarea
+                  rows={2}
+                  value={waiverKeterangan}
+                  onChange={(e) => setWaiverKeterangan(e.target.value)}
+                  placeholder="Contoh: Beasiswa santri berprestasi / tidak mampu"
+                  className="w-full px-3 py-2 border rounded-xl outline-none focus:border-[#059669]"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t">
+                <button
+                  type="button"
+                  onClick={() => setWaiverModalOpen(false)}
+                  className="px-4 py-2 rounded-xl border text-slate-600 hover:bg-slate-100 font-semibold"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 rounded-xl bg-[#059669] hover:bg-[#047857] text-white font-semibold shadow-xs"
+                >
+                  Simpan Periode
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Modal Edit */}
-      <SantriFormModal
-        isOpen={editModalOpen}
-        onClose={() => setEditModalOpen(false)}
-        santriId={santri.id}
-        onSuccess={loadData}
-      />
+      {isAdmin && santri && (
+        <SantriFormModal
+          isOpen={editModalOpen}
+          onClose={() => setEditModalOpen(false)}
+          santriId={santri.id}
+          onSuccess={loadData}
+        />
+      )}
     </div>
   );
 };

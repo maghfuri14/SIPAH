@@ -23,6 +23,33 @@ export interface KwitansiPdfInput {
   profilPondok?: ProfilPondok;
 }
 
+export interface KwitansiConfig {
+  kop_surat: string;
+  footer_kwitansi: string;
+  nama_penandatangan: string;
+}
+
+export function getKwitansiConfig(): KwitansiConfig {
+  const profil = pengaturanService.getProfil();
+  const defaultConfig: KwitansiConfig = {
+    kop_surat: "PONDOK AL HIDAYAH TERIEK\nJln. Mayor Bismo No 71-73 Tertek Pare Kediri",
+    footer_kwitansi: "Terima kasih atas pembayaran Anda",
+    nama_penandatangan: profil.bendahara || "Shofil Mubarok",
+  };
+  try {
+    const raw = localStorage.getItem('al_hidayah_kwitansi_config');
+    if (!raw) return defaultConfig;
+    const parsed = JSON.parse(raw);
+    return {
+      ...defaultConfig,
+      ...parsed,
+      nama_penandatangan: parsed.nama_penandatangan || profil.bendahara || "Shofil Mubarok",
+    };
+  } catch {
+    return defaultConfig;
+  }
+}
+
 // Terbilang Rupiah Helper
 export function terbilang(nominal: number): string {
   const angka = [
@@ -91,7 +118,7 @@ function parseInputData(
   inputOrTransaksi: any,
   dataSantriOrProfil?: any,
   dataProfilParam?: any
-): { input: KwitansiPdfInput; profil: ProfilPondok } {
+): { input: KwitansiPdfInput; profil: ProfilPondok; config: KwitansiConfig } {
   let input: KwitansiPdfInput;
 
   if (
@@ -160,7 +187,8 @@ function parseInputData(
   }
 
   const profil = input.profilPondok || pengaturanService.getProfil();
-  return { input, profil };
+  const config = getKwitansiConfig();
+  return { input, profil, config };
 }
 
 /**
@@ -171,7 +199,7 @@ export function generateKwitansiPdf(
   dataSantriOrProfil?: any,
   dataProfilParam?: any
 ): void {
-  const { input, profil } = parseInputData(
+  const { input, profil, config } = parseInputData(
     inputOrTransaksi,
     dataSantriOrProfil,
     dataProfilParam
@@ -187,17 +215,21 @@ export function generateKwitansiPdf(
   const pageWidth = doc.internal.pageSize.getWidth(); // 210mm
   const margin = 12;
 
-  // 1. KOP SURAT
+  // 1. KOP SURAT (from config)
+  const kopLines = (config.kop_surat || '').split('\n');
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(14);
+  doc.setFontSize(13);
   doc.setTextColor(4, 120, 87); // Emerald 700 (#047857)
-  doc.text(profil.nama_pondok || 'Pondok Pesantren Al Hidayah', margin, 14);
+  doc.text(kopLines[0] || 'PONDOK AL HIDAYAH TERIEK', margin, 14);
+
+  if (kopLines.length > 1) {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8.5);
+    doc.setTextColor(71, 85, 105); // Slate 600
+    doc.text(kopLines.slice(1).join(', '), margin, 19);
+  }
 
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8.5);
-  doc.setTextColor(71, 85, 105); // Slate 600
-  doc.text(profil.alamat || 'Kediri, Jawa Timur', margin, 19);
-
   doc.setFontSize(8);
   doc.setTextColor(100, 116, 139); // Slate 500
   doc.text(`Pengasuh: ${profil.pengasuh || '-'}`, margin, 23);
@@ -310,11 +342,12 @@ export function generateKwitansiPdf(
   const terbilangStr = `# ${terbilang(input.totalPembayaran)} #`;
   doc.text(terbilangStr, margin + 17, finalY + 5);
 
-  if (input.keterangan) {
+  const catatanParts = [input.keterangan, config.footer_kwitansi].filter(Boolean);
+  if (catatanParts.length > 0) {
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(7.5);
     doc.setTextColor(100, 116, 139);
-    doc.text(`Catatan: ${input.keterangan}`, margin, finalY + 9);
+    doc.text(`Catatan: ${catatanParts.join(' | ')}`, margin, finalY + 9);
   }
 
   // 6. AREA TANDA TANGAN
@@ -333,9 +366,12 @@ export function generateKwitansiPdf(
   doc.text('Bendahara Pondok,', rightSigX, sigY, { align: 'center' });
 
   doc.setFont('helvetica', 'bold');
-  doc.text(`( ${profil.bendahara || 'Shofil Mubarok'} )`, rightSigX, sigY + 16, {
-    align: 'center',
-  });
+  doc.text(
+    `( ${config.nama_penandatangan || profil.bendahara || 'Shofil Mubarok'} )`,
+    rightSigX,
+    sigY + 16,
+    { align: 'center' }
+  );
 
   // Download PDF
   const safeSantriName = (input.santri.nama || 'Santri').replace(/[^a-zA-Z0-9]/g, '_');
@@ -351,13 +387,21 @@ export function printKwitansiHtml(
   dataSantriOrProfil?: any,
   dataProfilParam?: any
 ): void {
-  const { input, profil } = parseInputData(
+  const { input, profil, config } = parseInputData(
     inputOrTransaksi,
     dataSantriOrProfil,
     dataProfilParam
   );
 
   const allItems = [...input.items, ...(input.iuranTambahan || [])];
+  const kopHtml = (config.kop_surat || '')
+    .split('\n')
+    .map((line, idx) =>
+      idx === 0
+        ? `<h1>${line}</h1>`
+        : `<p>${line}</p>`
+    )
+    .join('');
 
   const printWindow = window.open('', '_blank', 'width=800,height=600');
   if (!printWindow) return;
@@ -457,7 +501,7 @@ export function printKwitansiHtml(
             border-radius: 6px;
             font-style: italic;
             color: #065f46;
-            margin-bottom: 16px;
+            margin-bottom: 12px;
             font-size: 12px;
           }
           .footer-sig {
@@ -481,8 +525,7 @@ export function printKwitansiHtml(
       <body>
         <div class="kwitansi-container">
           <div class="kop">
-            <h1>${profil.nama_pondok || 'Pondok Pesantren Al Hidayah'}</h1>
-            <p>${profil.alamat || 'Kediri, Jawa Timur'}</p>
+            ${kopHtml}
             <p>Pengasuh: ${profil.pengasuh || '-'}</p>
           </div>
 
@@ -535,13 +578,9 @@ export function printKwitansiHtml(
             <strong>Terbilang:</strong> # ${terbilang(input.totalPembayaran)} #
           </div>
 
-          ${
-            input.keterangan
-              ? `<p style="font-size: 11px; color: #64748b; margin-top: -8px; margin-bottom: 16px;">
-                  Catatan: ${input.keterangan}
-                </p>`
-              : ''
-          }
+          <p style="font-size: 11px; color: #64748b; margin-top: 0; margin-bottom: 16px;">
+            ${[input.keterangan, config.footer_kwitansi].filter(Boolean).join(' | ')}
+          </p>
 
           <div class="footer-sig">
             <div class="sig-box">
@@ -553,7 +592,7 @@ export function printKwitansiHtml(
               <p>Pare, ${formatDateIndo(input.tanggalBayar)}</p>
               <p><strong>Bendahara Pondok,</strong></p>
               <div class="sig-space"></div>
-              <p><strong>( ${profil.bendahara || 'Shofil Mubarok'} )</strong></p>
+              <p><strong>( ${config.nama_penandatangan || profil.bendahara || 'Shofil Mubarok'} )</strong></p>
             </div>
           </div>
         </div>

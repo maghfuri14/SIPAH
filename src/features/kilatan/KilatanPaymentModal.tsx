@@ -190,12 +190,44 @@ export const KilatanPaymentModal: React.FC<KilatanPaymentModalProps> = ({
     }));
   };
 
-  // Additional fees handlers
+  // Additional fees helpers
+  const getStoredIuranOptions = () => {
+    try {
+      const raw = localStorage.getItem('al_hidayah_iuran_tambahan');
+      if (!raw) {
+        return [
+          { id: 'iur-1', nama: 'Seragam', tipe: 'Keduanya', nominal: 50000 },
+          { id: 'iur-2', nama: 'Kitab', tipe: 'Kilatan', nominal: 35000 },
+        ];
+      }
+      const list: any[] = JSON.parse(raw);
+      return list.filter((item) => item.tipe === 'Kilatan' || item.tipe === 'Keduanya' || !item.tipe);
+    } catch {
+      return [
+        { id: 'iur-1', nama: 'Seragam', tipe: 'Keduanya', nominal: 50000 },
+        { id: 'iur-2', nama: 'Kitab', tipe: 'Kilatan', nominal: 35000 },
+      ];
+    }
+  };
+
   const handleAddIuranLain = () => {
+    const options = getStoredIuranOptions();
+    const first = options[0] || { nama: '', nominal: 0 };
     setIuranTambahan((prev) => [
       ...prev,
-      { id: 'i_' + Date.now(), nama: '', nominal: 0 },
+      { id: 'i_' + Date.now(), nama: first.nama, nominal: first.nominal },
     ]);
+  };
+
+  const handleSelectIuranPreset = (id: string, selectedNama: string) => {
+    const options = getStoredIuranOptions();
+    const found = options.find((o) => o.nama === selectedNama);
+    const nominal = found ? found.nominal : 0;
+    setIuranTambahan((prev) =>
+      prev.map((item) =>
+        item.id === id ? { ...item, nama: selectedNama, nominal } : item
+      )
+    );
   };
 
   const handleRemoveIuranLain = (id: string) => {
@@ -662,13 +694,18 @@ export const KilatanPaymentModal: React.FC<KilatanPaymentModalProps> = ({
 
                     {iuranTambahan.map((item) => (
                       <div key={item.id} className="flex items-center gap-2">
-                        <input
-                          type="text"
-                          placeholder="Nama iuran (contoh: Pendaftaran, Buku Kitab)"
+                        <select
                           value={item.nama}
-                          onChange={(e) => handleIuranLainChange(item.id, 'nama', e.target.value)}
-                          className="flex-1 px-3 py-1.5 text-xs border border-slate-300 rounded-lg outline-none focus:border-[#059669]"
-                        />
+                          onChange={(e) => handleSelectIuranPreset(item.id, e.target.value)}
+                          className="flex-1 px-3 py-1.5 text-xs border border-slate-300 rounded-lg outline-none focus:border-[#059669] bg-white text-slate-800"
+                        >
+                          <option value="" disabled>-- Pilih Iuran Tambahan --</option>
+                          {getStoredIuranOptions().map((opt) => (
+                            <option key={opt.id || opt.nama} value={opt.nama}>
+                              {opt.nama} (Rp {opt.nominal.toLocaleString('id-ID')})
+                            </option>
+                          ))}
+                        </select>
                         <div className="w-32 relative">
                           <input
                             type="text"

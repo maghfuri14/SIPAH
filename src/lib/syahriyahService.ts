@@ -4,10 +4,12 @@ import {
   SyahriyahItemInput,
   SyahriyahTransaksiData,
   SyahriyahTransaksiRecord,
+  SyahriyahWaiver,
 } from '../types/syahriyah';
 import { Santri } from '../types/santri';
 import { santriService } from './santriService';
 import { kasService } from './kasService';
+import { waiverService } from './waiverService';
 
 const STORAGE_KEY = 'al_hidayah_syahriyah';
 const TRANSAKSI_KEY = 'al_hidayah_syahriyah_transaksi';
@@ -29,18 +31,38 @@ function delay(ms = 200): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// Generate realistic mock records per santri for a given year
+// Generate realistic mock records per santri for a given year considering waivers
 export function generateMockSyahriyah(
   santriId: string,
   kategori: string,
-  tahun: number
+  tahun: number,
+  statusSyahriyah: 'Normal' | 'Bebas' | 'Keringanan' = 'Normal',
+  waivers: SyahriyahWaiver[] = []
 ): SyahriyahBulan[] {
-  const nominalTagihan = getTarifSyahriyah(kategori);
+  const baseTarif = getTarifSyahriyah(kategori);
   const result: SyahriyahBulan[] = [];
-
   const charCodeSum = santriId.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
 
   for (let bulan = 1; bulan <= 12; bulan++) {
+    const waiver = waivers.find((w) => bulan >= w.bulan_mulai && bulan <= w.bulan_selesai);
+    const effectiveStatus = waiver ? waiver.jenis : statusSyahriyah;
+
+    if (effectiveStatus === 'Bebas') {
+      result.push({
+        tahun,
+        bulan,
+        nominal_tagihan: 0,
+        total_dibayar: 0,
+        status: 'Bebas',
+      });
+      continue;
+    }
+
+    let nominalTagihan = baseTarif;
+    if (effectiveStatus === 'Keringanan') {
+      nominalTagihan = Math.floor(baseTarif / 2);
+    }
+
     if (tahun !== 2025) {
       result.push({
         tahun,
@@ -133,13 +155,42 @@ export const syahriyahService = {
     await delay(200);
     const santriList = await santriService.getSantriList();
     const stored = getStoredMatrixData();
+    const allWaivers = waiverService.getWaivers();
 
     const matrix = santriList.map((s) => {
       let records: SyahriyahBulan[];
+      const santriWaivers = allWaivers.filter((w) => w.santri_id === s.id && w.tahun === tahun);
+      const baseTarif = getTarifSyahriyah(s.kategori);
+
+      const getMonthWaiver = (bulan: number) => {
+        const found = santriWaivers.find(
+          (w) => bulan >= w.bulan_mulai && bulan <= w.bulan_selesai
+        );
+        if (found) return found.jenis;
+        return null;
+      };
+
       if (stored[s.id] && stored[s.id][tahun]) {
-        records = stored[s.id][tahun];
+        records = stored[s.id][tahun].map((r) => {
+          const wJenis = getMonthWaiver(r.bulan);
+          const effectiveStatus = wJenis || s.status_syahriyah || 'Normal';
+
+          if (effectiveStatus === 'Bebas') {
+            return { ...r, nominal_tagihan: 0, status: 'Bebas' as const };
+          } else if (effectiveStatus === 'Keringanan') {
+            const reduced = Math.floor(baseTarif / 2);
+            return { ...r, nominal_tagihan: reduced };
+          }
+          return { ...r, nominal_tagihan: baseTarif };
+        });
       } else {
-        records = generateMockSyahriyah(s.id, s.kategori, tahun);
+        records = generateMockSyahriyah(
+          s.id,
+          s.kategori,
+          tahun,
+          s.status_syahriyah || 'Normal',
+          santriWaivers
+        );
         if (!stored[s.id]) stored[s.id] = {};
         stored[s.id][tahun] = records;
       }
@@ -175,12 +226,25 @@ export const syahriyahService = {
     items.forEach((item) => {
       let yearRecords = storedMatrix[santriId][item.tahun];
       if (!yearRecords) {
-        yearRecords = generateMockSyahriyah(santriId, santri.kategori, item.tahun);
+        const santriWaivers = waiverService
+          .getWaiversForSantri(santriId)
+          .filter((w) => w.tahun === item.tahun);
+        yearRecords = generateMockSyahriyah(
+          santriId,
+          santri.kategori,
+          item.tahun,
+          santri.status_syahriyah || 'Normal',
+          santriWaivers
+        );
       }
 
       const index = yearRecords.findIndex((r) => r.bulan === item.bulan);
       if (index !== -1) {
         const currentRecord = yearRecords[index];
+        if (currentRecord.status === 'Bebas') {
+          throw new Error(`Bulan ${item.bulan} tahun ${item.tahun} bebas dari pembayaran syahriyah`);
+        }
+
         const newTotalDibayar = currentRecord.total_dibayar + item.nominal;
         let newStatus: StatusSyahriyah = 'Belum';
 
@@ -224,7 +288,7 @@ export const syahriyahService = {
     const storedTransaksi = getStoredTransaksiData();
     saveTransaksiData([newRecord, ...storedTransaksi]);
 
-    // 4. (PENTING): Automatically create income entry in Buku Kas
+    // 4. Automatically create income entry in Buku Kas
     const bulanNames = [
       'Jan',
       'Feb',

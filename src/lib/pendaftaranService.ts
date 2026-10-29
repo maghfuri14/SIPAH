@@ -149,6 +149,7 @@ export const pendaftaranService = {
       no_hp_wali: item.no_hp_wali,
       kategori: item.kategori,
       status: 'Aktif',
+      status_syahriyah: 'Normal',
       tanggal_masuk,
       catatan: item.catatan ? `(Dari Pendaftaran) ${item.catatan}` : 'Dikonversi dari Pendaftaran Santri',
     });

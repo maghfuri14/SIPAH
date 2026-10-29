@@ -6,6 +6,8 @@ import {
   Check,
   Clock,
   SearchX,
+  ShieldAlert,
+  Percent,
 } from 'lucide-react';
 import { SyahriyahBulan } from '../../types/syahriyah';
 import { Santri } from '../../types/santri';
@@ -101,6 +103,9 @@ export const SyahriyahListPage: React.FC = () => {
   const endItem = Math.min(currentPage * pageSize, totalFiltered);
 
   const handleCellClick = (santri: Santri, record: SyahriyahBulan) => {
+    if (santri.status_syahriyah === 'Bebas' || record.status === 'Bebas') {
+      return; // Disabled for Bebas santri
+    }
     setActiveSantri(santri);
     setActiveBulanNum(record.bulan);
     setPaymentModalOpen(true);
@@ -123,13 +128,13 @@ export const SyahriyahListPage: React.FC = () => {
             Syahriyah (Iuran Bulanan)
           </h1>
           <p className="text-sm text-slate-500 mt-1">
-            Rekap matriks pembayaran iuran bulanan santri
+            Rekap matriks pembayaran iuran bulanan santri (Mendukung Bebas & Keringanan)
           </p>
         </div>
 
         <button
           onClick={handleTambahPembayaran}
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#059669] hover:bg-[#047857] text-white text-sm font-semibold transition-colors shadow-xs"
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#059669] hover:bg-[#047857] text-white text-sm font-semibold transition-colors shadow-xs cursor-pointer"
         >
           <CreditCard className="w-4 h-4" />
           <span>+ Catat Pembayaran</span>
@@ -156,7 +161,7 @@ export const SyahriyahListPage: React.FC = () => {
             <select
               value={tahun}
               onChange={(e) => setTahun(Number(e.target.value))}
-              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg outline-none focus:border-[#059669] focus:ring-1 focus:ring-[#059669] bg-white text-slate-700 font-semibold"
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg outline-none focus:border-[#059669] focus:ring-1 focus:ring-[#059669] bg-white text-slate-700 font-semibold cursor-pointer"
             >
               <option value={2024}>Tahun 2024</option>
               <option value={2025}>Tahun 2025</option>
@@ -169,7 +174,7 @@ export const SyahriyahListPage: React.FC = () => {
             <select
               value={filterKategori}
               onChange={(e) => setFilterKategori(e.target.value)}
-              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg outline-none focus:border-[#059669] focus:ring-1 focus:ring-[#059669] bg-white text-slate-700"
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg outline-none focus:border-[#059669] focus:ring-1 focus:ring-[#059669] bg-white text-slate-700 cursor-pointer"
             >
               <option value="Semua">Semua Kategori</option>
               <option value="Mukim">Mukim</option>
@@ -188,7 +193,7 @@ export const SyahriyahListPage: React.FC = () => {
                 setFilterKategori('Semua');
                 setTahun(2025);
               }}
-              className="inline-flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-800 transition-colors py-1 px-2.5 rounded-md hover:bg-slate-100"
+              className="inline-flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-800 transition-colors py-1 px-2.5 rounded-md hover:bg-slate-100 cursor-pointer"
             >
               <RotateCcw className="w-3.5 h-3.5" />
               <span>Reset Filter</span>
@@ -225,7 +230,7 @@ export const SyahriyahListPage: React.FC = () => {
                 setFilterKategori('Semua');
                 setTahun(2025);
               }}
-              className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg transition-colors"
+              className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg transition-colors cursor-pointer"
             >
               Reset Filter
             </button>
@@ -254,78 +259,106 @@ export const SyahriyahListPage: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-xs">
-                {paginatedMatrix.map(({ santri, records }) => (
-                  <tr key={santri.id} className="hover:bg-slate-50/80 transition-colors group">
-                    {/* Sticky left column for santri name */}
-                    <td
-                      className="sticky left-0 z-10 bg-white group-hover:bg-slate-50/90 px-3 py-2.5 border-r border-slate-200 min-w-[210px] shadow-xs transition-colors"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <div className="font-bold text-[#0F172A] truncate max-w-[190px]">
-                        {santri.nama}
-                      </div>
-                      <div className="flex items-center gap-1.5 text-[10px] text-slate-500 mt-0.5">
-                        <span className="font-mono text-slate-600">{santri.nis}</span>
-                        <span>•</span>
-                        <span className="font-medium text-[#059669]">{santri.kategori}</span>
-                      </div>
-                    </td>
+                {paginatedMatrix.map(({ santri, records }) => {
+                  const isBebas = santri.status_syahriyah === 'Bebas';
+                  const isKeringanan = santri.status_syahriyah === 'Keringanan';
 
-                    {/* 12 Month Cells */}
-                    {records.map((rec) => {
-                      const sisaTagihan = rec.nominal_tagihan - rec.total_dibayar;
-                      return (
-                        <td
-                          key={rec.bulan}
-                          onClick={() => handleCellClick(santri, rec)}
-                          className="p-1 text-center border-r border-slate-100 select-none cursor-pointer relative group/cell"
-                        >
-                          {/* Custom Floating Hover Tooltip */}
-                          <div className="absolute bottom-full mb-1.5 left-1/2 -translate-x-1/2 opacity-0 group-hover/cell:opacity-100 transition-opacity duration-150 pointer-events-none z-30 whitespace-nowrap shadow-lg">
-                            {rec.status === 'Lunas' && (
-                              <div className="bg-emerald-800 text-white font-medium text-[11px] px-2.5 py-1 rounded-md shadow-md border border-emerald-700">
-                                Lunas: {formatRupiah(rec.nominal_tagihan)}
+                  return (
+                    <tr key={santri.id} className="hover:bg-slate-50/80 transition-colors group">
+                      {/* Sticky left column for santri name */}
+                      <td
+                        className="sticky left-0 z-10 bg-white group-hover:bg-slate-50/90 px-3 py-2.5 border-r border-slate-200 min-w-[210px] shadow-xs transition-colors"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-bold text-[#0F172A] truncate max-w-[150px]">
+                            {santri.nama}
+                          </span>
+                          {isBebas && (
+                            <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-slate-700 text-white shrink-0">
+                              Bebas
+                            </span>
+                          )}
+                          {isKeringanan && (
+                            <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-purple-100 text-purple-800 border border-purple-200 shrink-0">
+                              50%
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1.5 text-[10px] text-slate-500 mt-0.5">
+                          <span className="font-mono text-slate-600">{santri.nis}</span>
+                          <span>•</span>
+                          <span className="font-medium text-[#059669]">{santri.kategori}</span>
+                        </div>
+                      </td>
+
+                      {/* 12 Month Cells */}
+                      {records.map((rec) => {
+                        const sisaTagihan = rec.nominal_tagihan - rec.total_dibayar;
+
+                        return (
+                          <td
+                            key={rec.bulan}
+                            onClick={() => handleCellClick(santri, rec)}
+                            className={`p-1 text-center border-r border-slate-100 select-none relative group/cell ${
+                              isBebas ? 'cursor-not-allowed bg-slate-50/60' : 'cursor-pointer'
+                            }`}
+                          >
+                            {/* Custom Floating Hover Tooltip */}
+                            <div className="absolute bottom-full mb-1.5 left-1/2 -translate-x-1/2 opacity-0 group-hover/cell:opacity-100 transition-opacity duration-150 pointer-events-none z-30 whitespace-nowrap shadow-lg">
+                              {isBebas ? (
+                                <div className="bg-slate-800 text-white font-medium text-[11px] px-2.5 py-1 rounded-md shadow-md border border-slate-700">
+                                  Santri Bebas Syahriyah
+                                </div>
+                              ) : isKeringanan && rec.status === 'Belum' ? (
+                                <div className="bg-purple-800 text-white font-medium text-[11px] px-2.5 py-1 rounded-md shadow-md border border-purple-700">
+                                  Keringanan 50% - Tarif: {formatRupiah(rec.nominal_tagihan)}
+                                </div>
+                              ) : rec.status === 'Lunas' ? (
+                                <div className="bg-emerald-800 text-white font-medium text-[11px] px-2.5 py-1 rounded-md shadow-md border border-emerald-700">
+                                  Lunas: {formatRupiah(rec.nominal_tagihan)}
+                                </div>
+                              ) : rec.status === 'Sebagian' ? (
+                                <div className="bg-amber-800 text-white font-medium text-[11px] px-2.5 py-1 rounded-md shadow-md border border-amber-700">
+                                  Kurang: {formatRupiah(sisaTagihan)}
+                                </div>
+                              ) : (
+                                <div className="bg-slate-800 text-white font-medium text-[11px] px-2.5 py-1 rounded-md shadow-md border border-slate-700">
+                                  Belum Bayar
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Cell Badge */}
+                            {isBebas ? (
+                              <div className="w-full py-1.5 px-1 rounded-md bg-slate-200 text-slate-700 font-bold text-[10px] border border-slate-300 flex items-center justify-center gap-0.5 shadow-2xs">
+                                <span>Bebas</span>
+                              </div>
+                            ) : rec.status === 'Lunas' ? (
+                              <div className="w-full py-1.5 px-1 rounded-md bg-emerald-100/80 hover:bg-emerald-200/90 text-emerald-800 font-bold text-[11px] border border-emerald-200 flex items-center justify-center gap-0.5 transition-colors shadow-2xs">
+                                <Check className="w-3 h-3 text-emerald-700 shrink-0" />
+                                <span>Lunas</span>
+                              </div>
+                            ) : rec.status === 'Sebagian' ? (
+                              <div className="w-full py-1.5 px-1 rounded-md bg-amber-100/80 hover:bg-amber-200/90 text-amber-800 font-bold text-[10px] border border-amber-200 flex items-center justify-center gap-0.5 transition-colors shadow-2xs">
+                                <Clock className="w-3 h-3 text-amber-700 shrink-0" />
+                                <span>Setengah</span>
+                              </div>
+                            ) : isKeringanan ? (
+                              <div className="w-full py-1.5 px-1 rounded-md bg-purple-100 hover:bg-purple-200 text-purple-800 font-bold text-[10px] border border-purple-200 flex items-center justify-center transition-colors shadow-2xs">
+                                <span>Keringanan</span>
+                              </div>
+                            ) : (
+                              <div className="w-full py-1.5 px-1 rounded-md bg-slate-100 hover:bg-slate-200/70 text-slate-400 font-medium text-[11px] border border-slate-200 flex items-center justify-center transition-colors">
+                                <span>—</span>
                               </div>
                             )}
-
-                            {rec.status === 'Sebagian' && (
-                              <div className="bg-amber-800 text-white font-medium text-[11px] px-2.5 py-1 rounded-md shadow-md border border-amber-700">
-                                Kurang: {formatRupiah(sisaTagihan)}
-                              </div>
-                            )}
-
-                            {rec.status === 'Belum' && (
-                              <div className="bg-slate-800 text-white font-medium text-[11px] px-2.5 py-1 rounded-md shadow-md border border-slate-700">
-                                Belum Bayar
-                              </div>
-                            )}
-                          </div>
-
-                          {/* Cell Badge */}
-                          {rec.status === 'Lunas' && (
-                            <div className="w-full py-1.5 px-1 rounded-md bg-emerald-100/80 hover:bg-emerald-200/90 text-emerald-800 font-bold text-[11px] border border-emerald-200 flex items-center justify-center gap-0.5 transition-colors shadow-2xs">
-                              <Check className="w-3 h-3 text-emerald-700 shrink-0" />
-                              <span>Lunas</span>
-                            </div>
-                          )}
-
-                          {rec.status === 'Sebagian' && (
-                            <div className="w-full py-1.5 px-1 rounded-md bg-amber-100/80 hover:bg-amber-200/90 text-amber-800 font-bold text-[10px] border border-amber-200 flex items-center justify-center gap-0.5 transition-colors shadow-2xs">
-                              <Clock className="w-3 h-3 text-amber-700 shrink-0" />
-                              <span>Setengah</span>
-                            </div>
-                          )}
-
-                          {rec.status === 'Belum' && (
-                            <div className="w-full py-1.5 px-1 rounded-md bg-slate-100 hover:bg-slate-200/70 text-slate-400 font-medium text-[11px] border border-slate-200 flex items-center justify-center transition-colors">
-                              <span>—</span>
-                            </div>
-                          )}
-                        </td>
-                      );
-                    })}
-                  </tr>
-                ))}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -349,7 +382,7 @@ export const SyahriyahListPage: React.FC = () => {
                     setPageSize(Number(e.target.value));
                     setCurrentPage(1);
                   }}
-                  className="px-2 py-1 border border-slate-200 rounded-md bg-white text-slate-700 outline-none focus:border-[#059669]"
+                  className="px-2 py-1 border border-slate-200 rounded-md bg-white text-slate-700 outline-none focus:border-[#059669] cursor-pointer"
                 >
                   <option value={10}>10</option>
                   <option value={25}>25</option>
@@ -362,7 +395,7 @@ export const SyahriyahListPage: React.FC = () => {
                 <button
                   onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
                   disabled={currentPage === 1}
-                  className="px-2.5 py-1 rounded-md border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed font-medium transition-colors"
+                  className="px-2.5 py-1 rounded-md border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed font-medium transition-colors cursor-pointer"
                 >
                   Prev
                 </button>
@@ -371,7 +404,7 @@ export const SyahriyahListPage: React.FC = () => {
                   <button
                     key={p}
                     onClick={() => setCurrentPage(p)}
-                    className={`w-7 h-7 rounded-md font-medium text-xs flex items-center justify-center transition-colors ${
+                    className={`w-7 h-7 rounded-md font-medium text-xs flex items-center justify-center transition-colors cursor-pointer ${
                       currentPage === p
                         ? 'bg-[#059669] text-white font-bold'
                         : 'border border-slate-200 bg-white hover:bg-slate-100 text-slate-700'
@@ -384,7 +417,7 @@ export const SyahriyahListPage: React.FC = () => {
                 <button
                   onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
                   disabled={currentPage === totalPages}
-                  className="px-2.5 py-1 rounded-md border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed font-medium transition-colors"
+                  className="px-2.5 py-1 rounded-md border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed font-medium transition-colors cursor-pointer"
                 >
                   Next
                 </button>
@@ -396,7 +429,7 @@ export const SyahriyahListPage: React.FC = () => {
 
       {/* Legend Warna */}
       <div className="bg-white border border-[#E2E8F0] rounded-xl p-4 shadow-xs flex flex-wrap items-center justify-between gap-4 text-xs">
-        <div className="flex items-center gap-5 flex-wrap">
+        <div className="flex items-center gap-4 flex-wrap">
           <span className="font-bold text-slate-700">Keterangan Status:</span>
           <div className="flex items-center gap-2">
             <span className="w-3.5 h-3.5 rounded bg-emerald-100 border border-emerald-300 inline-block shrink-0" />
@@ -404,7 +437,15 @@ export const SyahriyahListPage: React.FC = () => {
           </div>
           <div className="flex items-center gap-2">
             <span className="w-3.5 h-3.5 rounded bg-amber-100 border border-amber-300 inline-block shrink-0" />
-            <span className="text-slate-600 font-medium">Bayar Sebagian (Setengah)</span>
+            <span className="text-slate-600 font-medium">Bayar Sebagian</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="w-3.5 h-3.5 rounded bg-purple-100 border border-purple-300 inline-block shrink-0" />
+            <span className="text-slate-600 font-medium">Keringanan (50%)</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="w-3.5 h-3.5 rounded bg-slate-700 inline-block shrink-0" />
+            <span className="text-slate-600 font-medium">Bebas Syahriyah</span>
           </div>
           <div className="flex items-center gap-2">
             <span className="w-3.5 h-3.5 rounded bg-slate-100 border border-slate-300 inline-block shrink-0" />

@@ -1,4 +1,4 @@
-export type StatusSyahriyah = 'Lunas' | 'Sebagian' | 'Belum';
+export type StatusSyahriyah = 'Lunas' | 'Sebagian' | 'Belum' | 'Bebas';
 
 export interface SyahriyahBulan {
   tahun: number;
@@ -36,5 +36,16 @@ export interface SyahriyahTransaksiRecord {
   items: SyahriyahItemInput[];
   transaksi_data: SyahriyahTransaksiData;
   total_pembayaran: number;
+  created_at: string;
+}
+
+export interface SyahriyahWaiver {
+  id: string;
+  santri_id: string;
+  tahun: number;
+  bulan_mulai: number;
+  bulan_selesai: number;
+  jenis: 'Bebas' | 'Keringanan';
+  keterangan?: string;
   created_at: string;
 }
