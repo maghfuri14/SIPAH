@@ -29,6 +29,7 @@ import {
 import { pengaturanService } from '../../lib/pengaturanService';
 import { UserFormModal } from './UserFormModal';
 import { authStore } from '../../store/authStore';
+import { api } from '../../lib/api';
 
 type ActiveTab =
   | 'profil'
@@ -56,6 +57,9 @@ interface KwitansiSettingConfig {
   footer_kwitansi: string;
   nama_penandatangan: string;
   logo_base64?: string;
+  catatan_kaki_thermal: string;
+  font_size_thermal: '10px' | '12px' | '14px';
+  paper_width_thermal: '58mm' | '80mm';
 }
 
 const STORAGE_KEY_IURAN = 'al_hidayah_iuran_tambahan';
@@ -184,6 +188,9 @@ export const PengaturanPage: React.FC = () => {
       kop_surat: 'PONDOK AL HIDAYAH TERIEK\nJln. Mayor Bismo No 71-73 Tertek Pare Kediri',
       footer_kwitansi: 'Terima kasih atas pembayaran Anda',
       nama_penandatangan: p.bendahara || 'Shofil Mubarok',
+      catatan_kaki_thermal: 'Simpan struk ini sebagai bukti sah.',
+      font_size_thermal: '12px' as const,
+      paper_width_thermal: '58mm' as const,
     };
     try {
       const raw = localStorage.getItem(STORAGE_KEY_KWITANSI);
@@ -193,6 +200,19 @@ export const PengaturanPage: React.FC = () => {
       return def;
     }
   });
+
+  useEffect(() => {
+    if (!isSuperAdmin) return;
+    api.get('/pengaturan/kwitansi-config')
+      .then(({ data }) => {
+        if (data?.success && data.data) {
+          setKwitansiConfig((current) => ({ ...current, ...data.data }));
+        }
+      })
+      .catch(() => {
+        showToast('Konfigurasi cetak dari server tidak dapat dimuat.', 'error');
+      });
+  }, [isSuperAdmin]);
 
   // Toast State
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -366,10 +386,18 @@ export const PengaturanPage: React.FC = () => {
   };
 
   // Kop & Kwitansi Handlers
-  const handleSaveKwitansiConfig = (e: React.FormEvent) => {
+  const handleSaveKwitansiConfig = async (e: React.FormEvent) => {
     e.preventDefault();
-    localStorage.setItem(STORAGE_KEY_KWITANSI, JSON.stringify(kwitansiConfig));
-    showToast('Pengaturan Kop & Kwitansi berhasil disimpan!');
+    try {
+      const { data } = await api.put('/pengaturan/kwitansi-config', kwitansiConfig);
+      if (data?.success) {
+        localStorage.setItem(STORAGE_KEY_KWITANSI, JSON.stringify(data.data));
+        setKwitansiConfig(data.data);
+        showToast('Pengaturan Kop, Kwitansi, dan Thermal berhasil disimpan!');
+      }
+    } catch (error: any) {
+      showToast(error?.response?.data?.message || 'Gagal menyimpan pengaturan cetak.', 'error');
+    }
   };
 
   // Backup & Restore Handlers
@@ -1017,7 +1045,7 @@ export const PengaturanPage: React.FC = () => {
                   onChange={(e) =>
                     setKwitansiConfig({ ...kwitansiConfig, kop_surat: e.target.value })
                   }
-                  className="w-full px-3.5 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-[#059669] focus:border-transparent outline-none text-slate-800 font-mono text-xs"
+                  className="w-full px-3 py-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none text-slate-800 font-mono text-sm"
                 />
                 <p className="text-[11px] text-slate-400 mt-1">
                   Baris pertama akan dicetak tebal sebagai nama instansi / pondok.
@@ -1098,6 +1126,67 @@ export const PengaturanPage: React.FC = () => {
                 />
               </div>
 
+              <div className="pt-4 border-t border-slate-100">
+                <h3 className="text-sm font-bold text-slate-900 mb-3">Pengaturan Cetak Thermal</h3>
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      Catatan Kaki Thermal
+                    </label>
+                    <textarea
+                      rows={2}
+                      value={kwitansiConfig.catatan_kaki_thermal}
+                      onChange={(e) =>
+                        setKwitansiConfig({
+                          ...kwitansiConfig,
+                          catatan_kaki_thermal: e.target.value,
+                        })
+                      }
+                      className="w-full px-3.5 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-[#059669] focus:border-transparent outline-none text-slate-800 text-xs"
+                    />
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">
+                        Ukuran Font Thermal
+                      </label>
+                      <select
+                        value={kwitansiConfig.font_size_thermal}
+                        onChange={(e) =>
+                          setKwitansiConfig({
+                            ...kwitansiConfig,
+                            font_size_thermal: e.target.value as '10px' | '12px' | '14px',
+                          })
+                        }
+                        className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs bg-white"
+                      >
+                        <option value="10px">Kecil - 10px</option>
+                        <option value="12px">Sedang - 12px</option>
+                        <option value="14px">Besar - 14px</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">
+                        Lebar Kertas Thermal
+                      </label>
+                      <select
+                        value={kwitansiConfig.paper_width_thermal}
+                        onChange={(e) =>
+                          setKwitansiConfig({
+                            ...kwitansiConfig,
+                            paper_width_thermal: e.target.value as '58mm' | '80mm',
+                          })
+                        }
+                        className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs bg-white"
+                      >
+                        <option value="58mm">58mm</option>
+                        <option value="80mm">80mm</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               <div className="pt-4 border-t border-slate-100 flex justify-start">
                 <button
                   type="submit"
@@ -1112,6 +1201,29 @@ export const PengaturanPage: React.FC = () => {
 
           {/* Right Column: Real-Time A4 Preview Box */}
           <div className="bg-slate-100 border border-slate-200 rounded-2xl p-4 sm:p-6 shadow-xs flex flex-col items-center">
+            <div className="w-full mb-5">
+              <div className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-3">
+                Preview Thermal
+              </div>
+              <div
+                className="mx-auto bg-white border border-slate-300 shadow-md p-3 text-center overflow-hidden"
+                style={{
+                  width: kwitansiConfig.paper_width_thermal === '80mm' ? '320px' : '232px',
+                  fontSize: kwitansiConfig.font_size_thermal,
+                }}
+              >
+                {kwitansiConfig.logo_base64 && (
+                  <img src={kwitansiConfig.logo_base64} alt="Logo" className="w-10 h-10 object-contain mx-auto mb-1" />
+                )}
+                <div className="font-bold border-b border-dashed border-slate-400 pb-2">
+                  {kwitansiConfig.kop_surat.split('\n')[0]}
+                </div>
+                <div className="py-2 text-[0.85em] text-left">KWITANSI PEMBAYARAN</div>
+                <div className="text-[0.85em] border-t border-dashed border-slate-400 pt-2">
+                  {kwitansiConfig.catatan_kaki_thermal || 'Simpan struk ini sebagai bukti sah.'}
+                </div>
+              </div>
+            </div>
             <div className="w-full flex items-center justify-between mb-3">
               <span className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
                 <FileText className="w-4 h-4 text-emerald-600" />
@@ -1309,7 +1421,7 @@ export const PengaturanPage: React.FC = () => {
       {isIuranModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div
-            className="fixed inset-0 bg-black/50 backdrop-blur-xs"
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm"
             onClick={() => setIsIuranModalOpen(false)}
           />
           <div className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl p-6 z-10 space-y-4">
@@ -1397,18 +1509,25 @@ export const PengaturanPage: React.FC = () => {
       {isTarifModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div
-            className="fixed inset-0 bg-black/50 backdrop-blur-xs"
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm"
             onClick={() => setIsTarifModalOpen(false)}
           />
           <div className="relative w-full max-w-2xl bg-white rounded-2xl shadow-2xl p-6 z-10 space-y-5 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between border-b pb-3">
-              <h3 className="text-base font-bold text-slate-900">
-                Pengaturan Tarif Baru
-              </h3>
+            <div className="flex items-center justify-between border-b border-slate-200 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
+                  <DollarSign className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-bold text-slate-900">Pengaturan Tarif Baru</h3>
+                  <p className="text-sm text-slate-500">Atur tarif efektif untuk periode pembayaran</p>
+                </div>
+              </div>
               <button
                 type="button"
                 onClick={() => setIsTarifModalOpen(false)}
-                className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+                aria-label="Tutup modal"
+                className="rounded-lg p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
               >
                 ✕
               </button>
@@ -1522,7 +1641,7 @@ export const PengaturanPage: React.FC = () => {
                         syahriyah_mukim: Number(e.target.value) || 0,
                       })
                     }
-                    className="w-full px-3.5 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-[#059669] focus:border-transparent outline-none text-slate-800 font-mono text-xs"
+                    className="w-full px-3 py-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none text-slate-800 font-mono text-sm"
                   />
                 </div>
 
@@ -1541,7 +1660,7 @@ export const PengaturanPage: React.FC = () => {
                         syahriyah_nduduk: Number(e.target.value) || 0,
                       })
                     }
-                    className="w-full px-3.5 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-[#059669] focus:border-transparent outline-none text-slate-800 font-mono text-xs"
+                    className="w-full px-3 py-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none text-slate-800 font-mono text-sm"
                   />
                 </div>
 
@@ -1560,7 +1679,7 @@ export const PengaturanPage: React.FC = () => {
                         syahriyah_kilatan: Number(e.target.value) || 0,
                       })
                     }
-                    className="w-full px-3.5 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-[#059669] focus:border-transparent outline-none text-slate-800 font-mono text-xs"
+                    className="w-full px-3 py-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none text-slate-800 font-mono text-sm"
                   />
                 </div>
 
@@ -1585,18 +1704,19 @@ export const PengaturanPage: React.FC = () => {
               </div>
 
               {/* Footer Modal */}
-              <div className="flex justify-end gap-2 pt-3 border-t">
+              <div className="flex justify-end gap-2 pt-3 border-t border-slate-200 bg-slate-50 -mx-6 -mb-6 px-6 py-4">
                 <button
                   type="button"
                   onClick={() => setIsTarifModalOpen(false)}
-                  className="px-4 py-2 border border-slate-300 text-slate-700 rounded-xl font-semibold hover:bg-slate-100 cursor-pointer"
+                  className="px-4 py-2 border border-slate-300 text-slate-700 rounded-lg text-sm font-semibold hover:bg-slate-100 cursor-pointer"
                 >
                   Batal
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold shadow-xs cursor-pointer"
+                  className="inline-flex items-center gap-2 px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-semibold shadow-xs cursor-pointer"
                 >
+                  <CheckCircle2 className="h-4 w-4" />
                   Simpan Tarif Baru
                 </button>
               </div>

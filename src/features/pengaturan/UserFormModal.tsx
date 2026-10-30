@@ -98,11 +98,11 @@ export const UserFormModal: React.FC<UserFormModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4 overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4 overflow-y-auto">
       <div className="bg-white rounded-2xl border border-slate-200 shadow-xl max-w-md w-full p-6 animate-in fade-in zoom-in-95 duration-150">
-        <div className="flex items-center justify-between pb-4 border-b border-slate-100 mb-5">
+        <div className="flex items-center justify-between pb-4 border-b border-slate-200 mb-5">
           <div className="flex items-center gap-2">
-            <div className="w-9 h-9 rounded-full bg-emerald-50 text-emerald-700 flex items-center justify-center font-bold">
+            <div className="w-10 h-10 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center font-bold">
               <User className="w-5 h-5 text-[#059669]" />
             </div>
             <div>
@@ -133,7 +133,7 @@ export const UserFormModal: React.FC<UserFormModalProps> = ({
 
         <form onSubmit={handleSubmit} className="space-y-4 text-sm">
           <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">
+            <label className="block text-sm font-medium text-slate-900 mb-1">
               Nama Lengkap <span className="text-red-500">*</span>
             </label>
             <input
@@ -141,13 +141,13 @@ export const UserFormModal: React.FC<UserFormModalProps> = ({
               value={nama}
               onChange={(e) => setNama(e.target.value)}
               placeholder="Contoh: Muhammad Maghfuri"
-              className="w-full px-3.5 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-[#059669] focus:border-transparent outline-none text-slate-800 text-xs"
+              className="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-emerald-500"
               required
             />
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">
+            <label className="block text-sm font-medium text-slate-900 mb-1">
               Username <span className="text-red-500">*</span>
             </label>
             <input
@@ -155,13 +155,13 @@ export const UserFormModal: React.FC<UserFormModalProps> = ({
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               placeholder="Contoh: maghfuri"
-              className="w-full px-3.5 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-[#059669] focus:border-transparent outline-none text-slate-800 text-xs font-mono"
+              className="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-emerald-500"
               required
             />
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">
+            <label className="block text-sm font-medium text-slate-900 mb-1">
               Password {editingUser ? '(Opsional: isi jika ingin ganti)' : <span className="text-red-500">*</span>}
             </label>
             <div className="relative">
@@ -170,21 +170,21 @@ export const UserFormModal: React.FC<UserFormModalProps> = ({
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder={editingUser ? 'Kosongkan jika tidak diubah' : 'Masukkan password'}
-                className="w-full px-3.5 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-[#059669] focus:border-transparent outline-none text-slate-800 text-xs font-mono pr-8"
+                className="w-full border border-slate-200 rounded-lg px-3 py-2.5 pr-8 text-sm outline-none focus:ring-2 focus:ring-emerald-500"
               />
               <Lock className="w-4 h-4 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2" />
             </div>
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">
+            <label className="block text-sm font-medium text-slate-900 mb-1">
               Role Akses <span className="text-red-500">*</span>
             </label>
             <div className="relative">
               <select
                 value={role}
                 onChange={(e) => setRole(e.target.value as UserRole)}
-                className="w-full px-3.5 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-[#059669] focus:border-transparent outline-none text-slate-800 text-xs appearance-none bg-white pr-8 font-medium"
+                className="w-full border border-slate-200 rounded-lg px-3 py-2.5 pr-8 text-sm outline-none focus:ring-2 focus:ring-emerald-500 bg-white"
               >
                 <option value="super_admin">Super Admin (Akses Penuh + Pengaturan)</option>
                 <option value="admin">Administrator (Input & Kelola Data)</option>
@@ -228,17 +228,17 @@ export const UserFormModal: React.FC<UserFormModalProps> = ({
             </div>
           </div>
 
-          <div className="flex items-center justify-end gap-2.5 pt-4 border-t border-slate-100 mt-6">
+          <div className="-mx-6 mt-6 flex items-center justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 border border-slate-300 rounded-xl text-slate-700 text-xs font-semibold hover:bg-slate-50 transition-colors"
+              className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-100"
             >
               Batal
             </button>
             <button
               type="submit"
-              className="px-4 py-2 bg-[#059669] hover:bg-[#047857] text-white text-xs font-semibold rounded-xl transition-colors shadow-xs flex items-center gap-1.5"
+              className="flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-700"
             >
               <CheckCircle2 className="w-4 h-4" />
               <span>{editingUser ? 'Simpan Perubahan' : 'Tambah Pengguna'}</span>

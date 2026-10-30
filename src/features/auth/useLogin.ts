@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { mockAuth } from '../../lib/mockAuth';
 import { authStore } from '../../store/authStore';
+import { api } from '../../lib/api';
 
 export function useLogin() {
   const [username, setUsername] = useState('');
@@ -30,23 +30,26 @@ export function useLogin() {
     setErrorMessage('');
 
     try {
-      // Simulate 1 second processing delay
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      const { data } = await api.post('/auth/login', {
+        username: username.trim(),
+        password,
+      });
 
-      const res = await mockAuth(username.trim(), password);
-
-      if (res.success && res.role && res.nama) {
+      if (data.token && data.user) {
+        localStorage.setItem('token', data.token);
         authStore.setUser({
-          username: username.trim(),
-          role: res.role,
-          nama: res.nama,
+          username: data.user.username,
+          role: data.user.role,
+          nama: data.user.nama_lengkap || data.user.nama,
         });
         navigate('/dashboard');
       } else {
-        setErrorMessage(res.message || 'Username atau password salah');
+        setErrorMessage(data.message || 'Username atau password salah');
       }
-    } catch {
-      setErrorMessage('Terjadi kesalahan. Silakan coba lagi.');
+    } catch (error: any) {
+      setErrorMessage(
+        error?.response?.data?.message || 'Terjadi kesalahan. Silakan coba lagi.',
+      );
     } finally {
       setIsLoading(false);
     }

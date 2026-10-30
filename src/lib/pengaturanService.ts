@@ -1,5 +1,6 @@
 import { ProfilPondok, TarifDefault, UserAccount } from '../types/pengaturan';
 import { syahriyahService } from './syahriyahService';
+import { api } from './api';
 
 const KEY_PROFIL = 'al_hidayah_profil';
 const KEY_TARIF = 'al_hidayah_tarif';
@@ -14,10 +15,10 @@ export const DEFAULT_PROFIL: ProfilPondok = {
 };
 
 export const DEFAULT_TARIF: TarifDefault = {
-  syahriyah_mukim: 150000,
-  syahriyah_nduduk: 100000,
-  syahriyah_kilatan: 75000,
-  event_kilatan: 50000,
+  syahriyah_mukim: 0,
+  syahriyah_nduduk: 0,
+  syahriyah_kilatan: 0,
+  event_kilatan: 0,
 };
 
 export const DEFAULT_USERS: UserAccount[] = [
@@ -109,6 +110,11 @@ export const pengaturanService = {
       );
     }
     this.saveTarif(tarif);
+    await api.put('/pengaturan/tarif', {
+      ...tarif,
+      bulan_efektif,
+      tahun_efektif,
+    });
     localStorage.setItem(
       'al_hidayah_tarif_effective',
       JSON.stringify({

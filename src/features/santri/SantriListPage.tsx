@@ -677,7 +677,7 @@ export const SantriListPage: React.FC = () => {
       {deleteConfirmSantri && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div
-            className="fixed inset-0 bg-black/50 backdrop-blur-xs transition-opacity"
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm transition-opacity"
             onClick={() => setDeleteConfirmSantri(null)}
           />
           <div className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl p-6 z-10 space-y-4 animate-in fade-in zoom-in-95 duration-150">
@@ -695,7 +695,7 @@ export const SantriListPage: React.FC = () => {
               Yakin ingin menghapus data ini? Tindakan ini tidak dapat dibatalkan.
             </p>
 
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+            <div className="-mx-6 mt-2 flex items-center justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
               <button
                 onClick={() => setDeleteConfirmSantri(null)}
                 className="px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-100 text-xs font-semibold transition-colors"
@@ -716,7 +716,7 @@ export const SantriListPage: React.FC = () => {
       {syahriyahStatusSantri && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div
-            className="fixed inset-0 bg-black/50 backdrop-blur-xs transition-opacity"
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm transition-opacity"
             onClick={() => setSyahriyahStatusSantri(null)}
           />
           <div className="relative w-full max-w-sm bg-white rounded-2xl shadow-2xl p-6 z-10 space-y-4 animate-in fade-in zoom-in-95 duration-150">
@@ -751,7 +751,7 @@ export const SantriListPage: React.FC = () => {
               ))}
             </div>
 
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+            <div className="-mx-6 mt-2 flex items-center justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
               <button
                 type="button"
                 onClick={() => setSyahriyahStatusSantri(null)}
@@ -774,7 +774,7 @@ export const SantriListPage: React.FC = () => {
       {bulkSyahriyahModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div
-            className="fixed inset-0 bg-black/50 backdrop-blur-xs transition-opacity"
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm transition-opacity"
             onClick={() => setBulkSyahriyahModalOpen(false)}
           />
           <div className="relative w-full max-w-sm bg-white rounded-2xl shadow-2xl p-6 z-10 space-y-4 animate-in fade-in zoom-in-95 duration-150">
@@ -808,7 +808,7 @@ export const SantriListPage: React.FC = () => {
               ))}
             </div>
 
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+            <div className="-mx-6 mt-2 flex items-center justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
               <button
                 type="button"
                 onClick={() => setBulkSyahriyahModalOpen(false)}
@@ -832,7 +832,7 @@ export const SantriListPage: React.FC = () => {
       {bulkConfirmAction && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div
-            className="fixed inset-0 bg-black/50 backdrop-blur-xs transition-opacity"
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm transition-opacity"
             onClick={() => {
               if (!isBulkProcessing) setBulkConfirmAction(null);
             }}
@@ -853,7 +853,7 @@ export const SantriListPage: React.FC = () => {
               Apakah Anda yakin ingin {bulkConfirmAction.toLowerCase()} {selectedIds.size} santri terpilih?
             </p>
 
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+            <div className="-mx-6 mt-2 flex items-center justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
               <button
                 type="button"
                 disabled={isBulkProcessing}

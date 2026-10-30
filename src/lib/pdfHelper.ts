@@ -4,6 +4,7 @@ import { pengaturanService } from './pengaturanService';
 import { formatRupiah } from './formatter';
 import { ProfilPondok } from '../types/pengaturan';
 import { Santri } from '../types/santri';
+import { api } from './api';
 
 export interface KwitansiItem {
   deskripsi: string;
@@ -28,6 +29,9 @@ export interface KwitansiConfig {
   footer_kwitansi: string;
   nama_penandatangan: string;
   logo_base64?: string;
+  catatan_kaki_thermal?: string;
+  font_size_thermal?: '10px' | '12px' | '14px';
+  paper_width_thermal?: '58mm' | '80mm';
 }
 
 export function getKwitansiConfig(): KwitansiConfig {
@@ -36,6 +40,9 @@ export function getKwitansiConfig(): KwitansiConfig {
     kop_surat: "PONDOK AL HIDAYAH TERIEK\nJln. Mayor Bismo No 71-73 Tertek Pare Kediri",
     footer_kwitansi: "Terima kasih atas pembayaran Anda",
     nama_penandatangan: profil.bendahara || "Shofil Mubarok",
+    catatan_kaki_thermal: "Simpan struk ini sebagai bukti sah.",
+    font_size_thermal: "12px",
+    paper_width_thermal: "58mm",
   };
   try {
     const raw = localStorage.getItem('al_hidayah_kwitansi_config');
@@ -59,6 +66,15 @@ export function getKwitansiConfig(): KwitansiConfig {
         typeof parsed.logo_base64 === 'string' && parsed.logo_base64.trim()
           ? parsed.logo_base64
           : undefined,
+      catatan_kaki_thermal: typeof parsed.catatan_kaki_thermal === 'string'
+        ? parsed.catatan_kaki_thermal
+        : defaultConfig.catatan_kaki_thermal,
+      font_size_thermal: ['10px', '12px', '14px'].includes(parsed.font_size_thermal)
+        ? parsed.font_size_thermal
+        : defaultConfig.font_size_thermal,
+      paper_width_thermal: ['58mm', '80mm'].includes(parsed.paper_width_thermal)
+        ? parsed.paper_width_thermal
+        : defaultConfig.paper_width_thermal,
     };
   } catch {
     return defaultConfig;
@@ -639,22 +655,30 @@ export function printKwitansiHtml(
 /**
  * Opens a thermal receipt print window (58mm width).
  */
-export function printKwitansiThermal(
+export async function printKwitansiThermal(
   inputOrTransaksi: any,
   dataSantriOrProfil?: any,
   dataProfilParam?: any
-): void {
-  const { input, profil, config } = parseInputData(
+): Promise<void> {
+  const { input, profil } = parseInputData(
     inputOrTransaksi,
     dataSantriOrProfil,
     dataProfilParam
   );
+  const printWindow = window.open('', '_blank', 'width=350,height=600');
+  if (!printWindow) return;
+  let config = getKwitansiConfig();
+  try {
+    const { data } = await api.get('/pengaturan/kwitansi-config');
+    if (data?.success && data.data) config = { ...config, ...data.data };
+  } catch {
+    // Fall back to the locally cached receipt configuration.
+  }
 
   const allItems = [...input.items, ...(input.iuranTambahan || [])];
   const kopText = (config.kop_surat || '').split('\n')[0] || 'PONDOK AL HIDAYAH';
-
-  const printWindow = window.open('', '_blank', 'width=350,height=600');
-  if (!printWindow) return;
+  const paperWidth = config.paper_width_thermal === '80mm' ? '80mm' : '58mm';
+  const fontSize = config.font_size_thermal || '12px';
 
   const htmlContent = `
     <!DOCTYPE html>
@@ -665,17 +689,17 @@ export function printKwitansiThermal(
         <style>
           @page {
             margin: 0;
-            size: 58mm auto;
+            size: ${paperWidth} auto;
           }
           * { box-sizing: border-box; }
           body {
             font-family: 'Courier New', Courier, monospace;
-            width: 58mm;
+            width: ${paperWidth};
             margin: 0 auto;
             padding: 8px;
             color: #000000;
             background: #ffffff;
-            font-size: 11px;
+            font-size: ${fontSize};
             line-height: 1.2;
           }
           .text-center { text-align: center; }
@@ -695,7 +719,7 @@ export function printKwitansiThermal(
           table {
             width: 100%;
             border-collapse: collapse;
-            font-size: 10px;
+            font-size: 0.833em;
           }
           th, td {
             padding: 2px 0;
@@ -704,7 +728,7 @@ export function printKwitansiThermal(
           .footer {
             text-align: center;
             margin-top: 10px;
-            font-size: 10px;
+            font-size: 1em;
           }
         </style>
       </head>
@@ -754,7 +778,7 @@ export function printKwitansiThermal(
         <div class="footer">
           <div>Terbilang:</div>
           <div style="font-style: italic; font-size: 9px; margin-bottom: 6px;"># ${terbilang(input.totalPembayaran)} #</div>
-          <div>${config.footer_kwitansi || 'Terima kasih atas pembayaran Anda'}</div>
+          <div>${config.catatan_kaki_thermal || 'Simpan struk ini sebagai bukti sah.'}</div>
           <div style="margin-top: 6px; font-size: 9px;">Bendahara: ${config.nama_penandatangan || 'Shofil Mubarok'}</div>
         </div>
 

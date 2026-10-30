@@ -1,45 +1,33 @@
+import { api } from './api';
+
 export interface SyahriyahWaiver {
   id: string;
   santri_id: string;
   tahun: number;
-  bulan_mulai: number; // 1-12
-  bulan_selesai: number; // 1-12
-  jenis: 'Bebas' | 'Keringanan'; // Bebas (gratis) atau Keringanan (sebagian 50%)
+  bulan_mulai: number;
+  bulan_selesai: number;
+  jenis: 'Bebas' | 'Keringanan';
   keterangan?: string;
   created_at: string;
 }
 
-const STORAGE_KEY = 'al_hidayah_syahriyah_waivers';
-
 export const waiverService = {
-  getWaivers(): SyahriyahWaiver[] {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (!raw) return [];
-      return JSON.parse(raw);
-    } catch {
-      return [];
-    }
+  async getWaiversForSantri(santriId: string): Promise<SyahriyahWaiver[]> {
+    const response = await api.get(`/santri/${santriId}/keringanan`);
+    return response.data.data;
   },
 
-  getWaiversForSantri(santriId: string): SyahriyahWaiver[] {
-    return this.getWaivers().filter((w) => w.santri_id === santriId);
+  async getPaidMonths(santriId: string, tahun: number): Promise<number[]> {
+    const response = await api.get(`/santri/${santriId}/keringanan/paid-months/${tahun}`);
+    return response.data.data;
   },
 
-  addWaiver(waiver: Omit<SyahriyahWaiver, 'id' | 'created_at'>): SyahriyahWaiver {
-    const list = this.getWaivers();
-    const newWaiver: SyahriyahWaiver = {
-      ...waiver,
-      id: 'w_' + Date.now(),
-      created_at: new Date().toISOString(),
-    };
-    list.push(newWaiver);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
-    return newWaiver;
+  async addWaiver(waiver: Omit<SyahriyahWaiver, 'id' | 'created_at'>): Promise<SyahriyahWaiver> {
+    const response = await api.post(`/santri/${waiver.santri_id}/keringanan`, waiver);
+    return response.data.data;
   },
 
-  deleteWaiver(id: string): void {
-    const list = this.getWaivers().filter((w) => w.id !== id);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+  async deleteWaiver(id: string): Promise<void> {
+    await api.delete(`/santri/keringanan/${id}`);
   },
 };

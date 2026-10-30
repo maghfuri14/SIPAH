@@ -8,6 +8,7 @@ import {
   Calendar,
   Download,
   Printer,
+  CalendarDays,
 } from 'lucide-react';
 import { Santri } from '../../types/santri';
 import {
@@ -20,10 +21,10 @@ import {
 import {
   kilatanService,
   KILATAN_EVENTS,
-  DEFAULT_KILATAN_TARIF,
 } from '../../lib/kilatanService';
 import { santriService } from '../../lib/santriService';
 import { showToast } from '../../components/ui/Toast';
+import { api } from '../../lib/api';
 import { formatRupiah, formatThousand, parseThousand, isKilatanBeforeTanggalMasuk } from '../../lib/formatter';
 import { generateKwitansiPdf, printKwitansiHtml, printKwitansiThermal } from '../../lib/pdfHelper';
 
@@ -57,6 +58,28 @@ export const KilatanPaymentModal: React.FC<KilatanPaymentModalProps> = ({
 
   // Selected items keyed by `${tahun}-${event}`
   const [itemInputs, setItemInputs] = useState<Record<string, KilatanItemInput>>({});
+  const [isLoadingTarifStatus, setIsLoadingTarifStatus] = useState(false);
+  const [tarifConfig, setTarifConfig] = useState<Record<string, number>>({});
+
+  useEffect(() => {
+    if (!isOpen || !selectedSantri?.id) return;
+    let cancelled = false;
+    setIsLoadingTarifStatus(true);
+    Promise.all([api.get('/santri'), api.get('/pengaturan/tarif')]).then(([santriResponse, tarifResponse]) => {
+      const data = santriResponse.data;
+      const santriApi = (data.data || []).find((item: Santri) => item.id === selectedSantri.id);
+      if (!cancelled && santriApi) {
+        setSelectedSantri((current) => current ? {
+          ...current,
+          status_syahriyah: santriApi.status_syahriyah || 'Normal',
+        } : current);
+      }
+      if (!cancelled) setTarifConfig(tarifResponse.data.data || {});
+    }).catch(() => undefined).finally(() => {
+      if (!cancelled) setIsLoadingTarifStatus(false);
+    });
+    return () => { cancelled = true; };
+  }, [isOpen, selectedSantri?.id]);
 
   // Additional fees state
   const [iuranTambahan, setIuranTambahan] = useState<KilatanIuranTambahanInput[]>([]);
@@ -116,7 +139,13 @@ export const KilatanPaymentModal: React.FC<KilatanPaymentModalProps> = ({
           ) {
             const targetRec = row.records.find((r) => r.event === eventAktif);
             if (targetRec && targetRec.status !== 'Lunas') {
-              const sisa = targetRec.nominal_tagihan - targetRec.total_dibayar;
+              const status = selectedSantri.status_syahriyah || 'Normal';
+              const tarifEfektif = status === 'Bebas'
+                ? 0
+                : status === 'Keringanan'
+                  ? Math.floor(Number(tarifConfig.event_kilatan || 0) / 2)
+                  : Number(tarifConfig.event_kilatan || 0);
+              const sisa = tarifEfektif - targetRec.total_dibayar;
               const key = `${selectedYear}-${eventAktif}`;
               setItemInputs({
                 [key]: {
@@ -136,6 +165,7 @@ export const KilatanPaymentModal: React.FC<KilatanPaymentModalProps> = ({
   // Toggle event selection in selectedYear
   const handleToggleEvent = (event: EventKilatan) => {
     const isBeforeMasuk = isKilatanBeforeTanggalMasuk(selectedSantri?.tanggal_masuk, selectedYear, event);
+    if (!selectedSantri) return;
     if (isBeforeMasuk) return;
     const rec = currentYearRecords.find((r) => r.event === event);
     if (!rec || rec.status === 'Lunas') return;
@@ -150,7 +180,13 @@ export const KilatanPaymentModal: React.FC<KilatanPaymentModalProps> = ({
       });
     } else {
       // Add selection
-      const sisa = rec.nominal_tagihan - rec.total_dibayar;
+      const status = selectedSantri.status_syahriyah || 'Normal';
+      const nominalEfektif = status === 'Bebas'
+        ? 0
+        : status === 'Keringanan'
+          ? Math.floor(Number(tarifConfig.event_kilatan || 0) / 2)
+          : Number(tarifConfig.event_kilatan || 0);
+      const sisa = nominalEfektif - rec.total_dibayar;
       setItemInputs((prev) => ({
         ...prev,
         [key]: {
@@ -168,7 +204,7 @@ export const KilatanPaymentModal: React.FC<KilatanPaymentModalProps> = ({
     const item = itemInputs[key];
     if (!item) return;
 
-    const sisa = item.nominal || DEFAULT_KILATAN_TARIF;
+    const sisa = item.nominal || Number(tarifConfig.event_kilatan || 0);
     setItemInputs((prev) => ({
       ...prev,
       [key]: {
@@ -193,7 +229,7 @@ export const KilatanPaymentModal: React.FC<KilatanPaymentModalProps> = ({
   // Additional fees helpers
   const getStoredIuranOptions = () => {
     const defaults = [
-      { id: 'iur-1', nama: 'Seragam', tipe: 'Keduanya', nominal: 50000 },
+      { id: 'iur-1', nama: 'Seragam', tipe: 'Keduanya', nominal: 0 },
       { id: 'iur-2', nama: 'Kitab', tipe: 'Kilatan', nominal: 35000 },
     ];
     try {
@@ -342,10 +378,24 @@ export const KilatanPaymentModal: React.FC<KilatanPaymentModalProps> = ({
 
   if (!isOpen) return null;
 
+  const statusTarif = selectedSantri?.status_syahriyah || 'Normal';
+  const tarifEventDasar = Number(tarifConfig.event_kilatan || 0);
+  const tarifKilatan = statusTarif === 'Bebas'
+    ? 0
+    : statusTarif === 'Keringanan' ? Math.floor(tarifEventDasar / 2) : tarifEventDasar;
+  const tarifBadgeClass = statusTarif === 'Bebas'
+    ? 'border-emerald-200 bg-emerald-100 text-emerald-800'
+    : statusTarif === 'Keringanan'
+      ? 'border-amber-200 bg-amber-100 text-amber-800'
+      : 'border-slate-200 bg-slate-100 text-slate-700';
+  const tarifBadgeText = statusTarif === 'Bebas'
+    ? 'Bebas Syahriyah (Gratis)'
+    : statusTarif === 'Keringanan' ? 'Keringanan (50%)' : 'Tarif Normal (100%)';
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-4">
       {/* Backdrop */}
-      <div className="fixed inset-0 bg-black/50 backdrop-blur-xs transition-opacity" onClick={onClose} />
+      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm transition-opacity" onClick={onClose} />
 
       {/* Modal Dialog */}
       <div className="relative w-full max-w-2xl bg-white h-full sm:h-auto sm:max-h-[92vh] rounded-none sm:rounded-2xl shadow-2xl flex flex-col z-10 overflow-hidden">
@@ -435,17 +485,22 @@ export const KilatanPaymentModal: React.FC<KilatanPaymentModalProps> = ({
           /* FORM VIEW */
           <>
             {/* Header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-[#E2E8F0] bg-slate-50 shrink-0">
-              <div>
-                <h2 className="text-lg font-bold text-[#0F172A]">Catat Pembayaran Kilatan</h2>
-                <p className="text-xs text-slate-500">
-                  Iuran event berkala & pencatatan otomatis ke Buku Kas
-                </p>
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-white shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
+                  <CalendarDays className="w-5 h-5" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-slate-900">Catat Pembayaran Kilatan</h2>
+                  <p className="text-sm text-slate-500">
+                    Iuran event berkala & pencatatan otomatis ke Buku Kas
+                  </p>
+                </div>
               </div>
               <button
                 onClick={onClose}
                 aria-label="Tutup modal"
-                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-200/50 transition-colors"
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -512,9 +567,14 @@ export const KilatanPaymentModal: React.FC<KilatanPaymentModalProps> = ({
                         {selectedSantri.kategori}
                       </span>
                     </div>
-                    <p className="text-slate-500">
-                      Tarif Event Kilatan: <strong className="text-slate-700">{formatRupiah(DEFAULT_KILATAN_TARIF)}</strong> / event
-                    </p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className={`rounded-md border px-2 py-0.5 text-[11px] font-semibold ${tarifBadgeClass}`}>
+                        {isLoadingTarifStatus ? 'Memuat status tarif...' : tarifBadgeText}
+                      </span>
+                      <span className="text-slate-500">
+                        Tarif Event Kilatan: <strong className="text-slate-700">{formatRupiah(tarifKilatan)}</strong> / event
+                      </span>
+                    </div>
                   </div>
 
                   {!initialSantri && (
@@ -577,7 +637,10 @@ export const KilatanPaymentModal: React.FC<KilatanPaymentModalProps> = ({
                       {KILATAN_EVENTS.map((eventName) => {
                         const rec = currentYearRecords.find((r) => r.event === eventName);
                         const isBeforeMasuk = isKilatanBeforeTanggalMasuk(selectedSantri?.tanggal_masuk, selectedYear, eventName);
-                        const isLunas = rec?.status === 'Lunas' || isBeforeMasuk;
+                        const latestAllowed = new Date();
+                        latestAllowed.setFullYear(latestAllowed.getFullYear() + 1);
+                        const isBeyondLimit = selectedYear > latestAllowed.getFullYear();
+                        const isLunas = rec?.status === 'Lunas' || isBeforeMasuk || statusTarif === 'Bebas' || isBeyondLimit;
 
                         const itemKey = `${selectedYear}-${eventName}`;
                         const isSelected = Boolean(itemInputs[itemKey]);
@@ -726,7 +789,7 @@ export const KilatanPaymentModal: React.FC<KilatanPaymentModalProps> = ({
                   {/* Section 5: Detail Pembayaran */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
-                      <label htmlFor="tanggalBayarKilatan" className="block text-xs font-semibold text-slate-700 mb-1">
+                      <label htmlFor="tanggalBayarKilatan" className="mb-1 block text-sm font-medium text-slate-900">
                         Tanggal Bayar <span className="text-red-500">*</span>
                       </label>
                       <input
@@ -739,7 +802,7 @@ export const KilatanPaymentModal: React.FC<KilatanPaymentModalProps> = ({
                     </div>
 
                     <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      <label className="mb-1 block text-sm font-medium text-slate-900">
                         Metode Pembayaran <span className="text-red-500">*</span>
                       </label>
                       <div className="flex items-center gap-3 pt-1 text-xs font-medium text-slate-700">
@@ -760,7 +823,7 @@ export const KilatanPaymentModal: React.FC<KilatanPaymentModalProps> = ({
                   </div>
 
                   <div>
-                    <label htmlFor="ketKilatan" className="block text-xs font-semibold text-slate-700 mb-1">
+                    <label htmlFor="ketKilatan" className="mb-1 block text-sm font-medium text-slate-900">
                       Keterangan Tambahan (opsional)
                     </label>
                     <textarea
@@ -791,7 +854,7 @@ export const KilatanPaymentModal: React.FC<KilatanPaymentModalProps> = ({
             </form>
 
             {/* Footer */}
-            <div className="flex items-center justify-between px-6 py-4 border-t border-[#E2E8F0] bg-slate-50 shrink-0">
+            <div className="flex shrink-0 items-center justify-between border-t border-slate-200 bg-slate-50 px-6 py-4">
               <div>
                 <span className="text-xs text-slate-500 block">Total Pembayaran:</span>
                 <span className="text-lg font-bold text-[#059669]">
@@ -804,7 +867,7 @@ export const KilatanPaymentModal: React.FC<KilatanPaymentModalProps> = ({
                   type="button"
                   onClick={onClose}
                   disabled={isSubmitting}
-                  className="px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-100 text-xs font-semibold transition-colors"
+                  className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-100 transition-colors"
                 >
                   Batal
                 </button>
@@ -816,10 +879,12 @@ export const KilatanPaymentModal: React.FC<KilatanPaymentModalProps> = ({
                     !selectedSantri ||
                     selectedItemsList.length === 0 ||
                     totalPembayaran <= 0 ||
-                    !isDeclared
+                    !isDeclared ||
+                    statusTarif === 'Bebas'
                   }
-                  className="px-5 py-2 rounded-lg bg-[#059669] hover:bg-[#047857] text-white text-xs font-semibold transition-colors shadow-xs inline-flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-700 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
                 >
+                  <CheckCircle2 className="h-4 w-4" />
                   {isSubmitting ? 'Memproses...' : 'Simpan Pembayaran'}
                 </button>
               </div>

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Home, Building2, Calendar } from 'lucide-react';
+import { X, Home, Building2, Calendar, UserPlus, User, CheckCircle2 } from 'lucide-react';
 import { pendaftaranService } from '../../lib/pendaftaranService';
 import { showToast } from '../../components/ui/Toast';
 
@@ -96,13 +96,21 @@ export const PendaftaranFormModal: React.FC<PendaftaranFormModalProps> = ({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-4">
       {/* Backdrop */}
-      <div className="fixed inset-0 bg-black/50 backdrop-blur-xs transition-opacity" onClick={onClose} />
+      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm transition-opacity" onClick={onClose} />
 
       {/* Modal Dialog */}
       <div className="relative w-full max-w-xl bg-white h-full sm:h-auto sm:max-h-[90vh] rounded-none sm:rounded-2xl shadow-2xl flex flex-col z-10 overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-[#E2E8F0] bg-slate-50 shrink-0">
-          <h2 className="text-lg font-semibold text-[#0F172A]">Tambah Pendaftar Santri Baru</h2>
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-white shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center">
+              <UserPlus className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="text-xl font-bold text-slate-900">Tambah Pendaftar Santri Baru</h2>
+              <p className="text-sm text-slate-500">Masukkan data calon santri dan wali</p>
+            </div>
+          </div>
           <button
             onClick={onClose}
             aria-label="Tutup modal"
@@ -115,27 +123,30 @@ export const PendaftaranFormModal: React.FC<PendaftaranFormModalProps> = ({
         {/* Form Body */}
         <form id="pendaftaranForm" onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-4">
           <div>
-            <label htmlFor="namaCalon" className="block text-xs font-semibold text-slate-700 mb-1">
+            <label htmlFor="namaCalon" className="mb-1 block text-sm font-medium text-slate-900">
               Nama Calon Santri <span className="text-red-500">*</span>
             </label>
-            <input
-              id="namaCalon"
-              type="text"
-              value={namaCalon}
-              onChange={(e) => setNamaCalon(e.target.value)}
-              placeholder="Nama lengkap calon santri"
-              className={`w-full px-3 py-2.5 text-sm border rounded-lg outline-none transition-colors ${
+            <div className="relative">
+              <User className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <input
+                id="namaCalon"
+                type="text"
+                value={namaCalon}
+                onChange={(e) => setNamaCalon(e.target.value)}
+                placeholder="Nama lengkap calon santri"
+                className={`w-full rounded-lg border py-2.5 pl-9 pr-3 text-sm outline-none transition-colors ${
                 errors.namaCalon
                   ? 'border-red-500 ring-1 ring-red-500'
-                  : 'border-slate-300 focus:border-[#059669] focus:ring-1 focus:ring-[#059669]'
+                  : 'border-slate-200 focus:ring-2 focus:ring-emerald-500'
               }`}
-            />
+              />
+            </div>
             {errors.namaCalon && <p className="text-xs text-red-500 mt-1">{errors.namaCalon}</p>}
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label htmlFor="namaWaliCalon" className="block text-xs font-semibold text-slate-700 mb-1">
+              <label htmlFor="namaWaliCalon" className="mb-1 block text-sm font-medium text-slate-900">
                 Nama Wali <span className="text-red-500">*</span>
               </label>
               <input
@@ -147,14 +158,14 @@ export const PendaftaranFormModal: React.FC<PendaftaranFormModalProps> = ({
                 className={`w-full px-3 py-2.5 text-sm border rounded-lg outline-none transition-colors ${
                   errors.namaWali
                     ? 'border-red-500 ring-1 ring-red-500'
-                    : 'border-slate-300 focus:border-[#059669] focus:ring-1 focus:ring-[#059669]'
+                    : 'border-slate-200 focus:ring-2 focus:ring-emerald-500'
                 }`}
               />
               {errors.namaWali && <p className="text-xs text-red-500 mt-1">{errors.namaWali}</p>}
             </div>
 
             <div>
-              <label htmlFor="tanggalPendaftaran" className="block text-xs font-semibold text-slate-700 mb-1">
+              <label htmlFor="tanggalPendaftaran" className="mb-1 block text-sm font-medium text-slate-900">
                 Tanggal Pendaftaran <span className="text-red-500">*</span>
               </label>
               <input
@@ -165,7 +176,7 @@ export const PendaftaranFormModal: React.FC<PendaftaranFormModalProps> = ({
                 className={`w-full px-3 py-2.5 text-sm border rounded-lg outline-none transition-colors ${
                   errors.tanggalPendaftaran
                     ? 'border-red-500 ring-1 ring-red-500'
-                    : 'border-slate-300 focus:border-[#059669] focus:ring-1 focus:ring-[#059669]'
+                    : 'border-slate-200 focus:ring-2 focus:ring-emerald-500'
                 }`}
               />
             </div>
@@ -173,7 +184,7 @@ export const PendaftaranFormModal: React.FC<PendaftaranFormModalProps> = ({
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label htmlFor="noHpSantriCalon" className="block text-xs font-semibold text-slate-700 mb-1">
+              <label htmlFor="noHpSantriCalon" className="mb-1 block text-sm font-medium text-slate-900">
                 No HP Santri <span className="text-red-500">*</span>
               </label>
               <input
@@ -185,14 +196,14 @@ export const PendaftaranFormModal: React.FC<PendaftaranFormModalProps> = ({
                 className={`w-full px-3 py-2.5 text-sm border rounded-lg outline-none transition-colors ${
                   errors.noHpSantri
                     ? 'border-red-500 ring-1 ring-red-500'
-                    : 'border-slate-300 focus:border-[#059669] focus:ring-1 focus:ring-[#059669]'
+                    : 'border-slate-200 focus:ring-2 focus:ring-emerald-500'
                 }`}
               />
               {errors.noHpSantri && <p className="text-xs text-red-500 mt-1">{errors.noHpSantri}</p>}
             </div>
 
             <div>
-              <label htmlFor="noHpWaliCalon" className="block text-xs font-semibold text-slate-700 mb-1">
+              <label htmlFor="noHpWaliCalon" className="mb-1 block text-sm font-medium text-slate-900">
                 No HP Wali <span className="text-red-500">*</span>
               </label>
               <input
@@ -204,7 +215,7 @@ export const PendaftaranFormModal: React.FC<PendaftaranFormModalProps> = ({
                 className={`w-full px-3 py-2.5 text-sm border rounded-lg outline-none transition-colors ${
                   errors.noHpWali
                     ? 'border-red-500 ring-1 ring-red-500'
-                    : 'border-slate-300 focus:border-[#059669] focus:ring-1 focus:ring-[#059669]'
+                    : 'border-slate-200 focus:ring-2 focus:ring-emerald-500'
                 }`}
               />
               {errors.noHpWali && <p className="text-xs text-red-500 mt-1">{errors.noHpWali}</p>}
@@ -212,7 +223,7 @@ export const PendaftaranFormModal: React.FC<PendaftaranFormModalProps> = ({
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-2">
+            <label className="mb-2 block text-sm font-medium text-slate-900">
               Kategori Programs <span className="text-red-500">*</span>
             </label>
             <div role="radiogroup" className="grid grid-cols-3 gap-2.5">
@@ -245,7 +256,7 @@ export const PendaftaranFormModal: React.FC<PendaftaranFormModalProps> = ({
           </div>
 
           <div>
-            <label htmlFor="catatanCalon" className="block text-xs font-semibold text-slate-700 mb-1">
+            <label htmlFor="catatanCalon" className="mb-1 block text-sm font-medium text-slate-900">
               Catatan / Keterangan (opsional)
             </label>
             <textarea
@@ -254,20 +265,20 @@ export const PendaftaranFormModal: React.FC<PendaftaranFormModalProps> = ({
               value={catatan}
               onChange={(e) => setCatatan(e.target.value)}
               placeholder="Informasi latar belakang, referral, dll."
-              className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg outline-none focus:border-[#059669] focus:ring-1 focus:ring-[#059669]"
+              className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-emerald-500"
             />
           </div>
         </form>
 
         {/* Footer */}
-        <div className="flex items-center justify-between px-6 py-4 border-t border-[#E2E8F0] bg-slate-50 shrink-0">
+        <div className="flex shrink-0 items-center justify-between border-t border-slate-200 bg-slate-50 px-6 py-4">
           <span className="text-xs text-slate-500">* Wajib diisi</span>
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={onClose}
               disabled={isSubmitting}
-              className="px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-100 text-sm font-semibold transition-colors"
+              className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-100 transition-colors"
             >
               Batal
             </button>
@@ -275,8 +286,9 @@ export const PendaftaranFormModal: React.FC<PendaftaranFormModalProps> = ({
               type="submit"
               form="pendaftaranForm"
               disabled={isSubmitting}
-              className="px-5 py-2 rounded-lg bg-[#059669] hover:bg-[#047857] text-white text-sm font-semibold transition-colors shadow-xs inline-flex items-center gap-2 disabled:opacity-50"
+              className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-700 transition-colors disabled:opacity-50"
             >
+              <CheckCircle2 className="h-4 w-4" />
               {isSubmitting ? 'Menyimpan...' : 'Simpan Pendaftaran'}
             </button>
           </div>

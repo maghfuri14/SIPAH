@@ -97,15 +97,20 @@ export const KonversiModal: React.FC<KonversiModalProps> = ({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       {/* Backdrop */}
-      <div className="fixed inset-0 bg-black/50 backdrop-blur-xs transition-opacity" onClick={onClose} />
+      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm transition-opacity" onClick={onClose} />
 
       {/* Modal Dialog */}
       <div className="relative w-full max-w-lg bg-white rounded-2xl shadow-2xl flex flex-col z-10 overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-[#E2E8F0] bg-emerald-50/50 shrink-0">
-          <div className="flex items-center gap-2 text-emerald-800">
-            <UserCheck className="w-5 h-5 text-[#059669]" />
-            <h2 className="text-lg font-bold">Konversi ke Santri Aktif</h2>
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-white shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center">
+              <UserCheck className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="text-xl font-bold text-slate-900">Konversi ke Santri Aktif</h2>
+              <p className="text-sm text-slate-500">Tetapkan NIS dan status calon santri</p>
+            </div>
           </div>
           <button
             onClick={onClose}
@@ -136,7 +141,7 @@ export const KonversiModal: React.FC<KonversiModalProps> = ({
 
           {/* NIS Selection */}
           <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-2">
+            <label className="mb-2 block text-sm font-medium text-slate-900">
               Pengaturan Nomor Induk Santri (NIS) <span className="text-red-500">*</span>
             </label>
 
@@ -191,7 +196,7 @@ export const KonversiModal: React.FC<KonversiModalProps> = ({
                   className={`w-full px-3 py-2 text-sm border rounded-lg outline-none font-mono ${
                     nisError
                       ? 'border-red-500 ring-1 ring-red-500'
-                      : 'border-slate-300 focus:border-[#059669] focus:ring-1 focus:ring-[#059669]'
+                      : 'border-slate-200 focus:ring-2 focus:ring-emerald-500'
                   }`}
                 />
                 {nisError && (
@@ -206,7 +211,7 @@ export const KonversiModal: React.FC<KonversiModalProps> = ({
 
           {/* Tanggal Masuk */}
           <div>
-            <label htmlFor="tanggalMasukKonversi" className="block text-xs font-semibold text-slate-700 mb-1">
+            <label htmlFor="tanggalMasukKonversi" className="mb-1 block text-sm font-medium text-slate-900">
               Tanggal Masuk / Aktif <span className="text-red-500">*</span>
             </label>
             <input
@@ -214,25 +219,26 @@ export const KonversiModal: React.FC<KonversiModalProps> = ({
               type="date"
               value={tanggalMasuk}
               onChange={(e) => setTanggalMasuk(e.target.value)}
-              className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg outline-none focus:border-[#059669] focus:ring-1 focus:ring-[#059669]"
+              className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-emerald-500"
             />
           </div>
 
           {/* Actions */}
-          <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+          <div className="-mx-6 mt-2 flex items-center justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
             <button
               type="button"
               onClick={onClose}
               disabled={isSubmitting}
-              className="px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-100 text-xs font-semibold transition-colors"
+              className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-100 transition-colors"
             >
               Batal
             </button>
             <button
               type="submit"
               disabled={isSubmitting}
-              className="px-5 py-2 rounded-lg bg-[#059669] hover:bg-[#047857] text-white text-xs font-semibold transition-colors shadow-xs inline-flex items-center gap-1.5 disabled:opacity-50"
+              className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-700 transition-colors disabled:opacity-50"
             >
+              <CheckCircle2 className="h-4 w-4" />
               {isSubmitting ? 'Memproses...' : 'Konversi Sekarang'}
             </button>
           </div>

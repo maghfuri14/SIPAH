@@ -489,7 +489,7 @@ export const PendaftaranListPage: React.FC = () => {
       {bulkStatusAction && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div
-            className="fixed inset-0 bg-black/50 backdrop-blur-xs transition-opacity"
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm transition-opacity"
             onClick={() => {
               if (!isBulkProcessing) setBulkStatusAction(null);
             }}
@@ -516,7 +516,7 @@ export const PendaftaranListPage: React.FC = () => {
               Yakin ingin {bulkStatusAction === 'Diterima' ? 'Menerima' : 'Menolak'} {selectedIds.size} pendaftar terpilih?
             </p>
 
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+            <div className="-mx-6 mt-2 flex items-center justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
               <button
                 type="button"
                 disabled={isBulkProcessing}

@@ -26,7 +26,7 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({ isOpen, onClose, use
     <div className="fixed inset-0 z-50 lg:hidden">
       {/* Backdrop */}
       <div
-        className="fixed inset-0 bg-black/50 backdrop-blur-xs transition-opacity duration-300"
+        className="fixed inset-0 bg-black/50 backdrop-blur-sm transition-opacity duration-300"
         onClick={onClose}
         aria-label="Tutup menu"
         role="button"
