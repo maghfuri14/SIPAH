@@ -9,6 +9,7 @@ import {
   Users,
   UserPlus,
   CreditCard,
+  FileText,
 } from 'lucide-react';
 import {
   laporanService,
@@ -19,6 +20,8 @@ import { Santri } from '../../types/santri';
 import { Pendaftaran } from '../../types/pendaftaran';
 import { formatRupiah } from '../../lib/formatter';
 import { exportToCsv, exportToExcel } from '../../lib/exportHelper';
+import { getKwitansiConfig } from '../../lib/pdfHelper';
+import { pengaturanService } from '../../lib/pengaturanService';
 import { ToastContainer } from '../../components/ui/Toast';
 
 type TabType = 'keuangan' | 'santri' | 'pendaftaran' | 'syahriyah';
@@ -43,7 +46,7 @@ export const LaporanPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<TabType>('keuangan');
 
   // Filter States
-  const [tahun, setTahun] = useState<number>(2025);
+  const [tahun, setTahun] = useState<number>(new Date().getFullYear());
   const [bulan, setBulan] = useState<string>('Semua');
   const [jenisKeuangan, setJenisKeuangan] = useState<string>('Semua');
   const [kategoriSantri, setKategoriSantri] = useState<string>('Semua');
@@ -83,7 +86,7 @@ export const LaporanPage: React.FC = () => {
   }, [activeTab, tahun, bulan, jenisKeuangan, kategoriSantri, statusSantri, statusPendaftaran]);
 
   const handleResetFilter = () => {
-    setTahun(2025);
+    setTahun(new Date().getFullYear());
     setBulan('Semua');
     setJenisKeuangan('Semua');
     setKategoriSantri('Semua');
@@ -227,6 +230,268 @@ export const LaporanPage: React.FC = () => {
     exportToExcel(`${filenameBase}.xlsx`, data, sheetName);
   };
 
+  const handleExportPdf = () => {
+    const bulanLabel = BULAN_OPTIONS.find((b) => b.value === bulan)?.label || bulan;
+    const kwitansiConfig = getKwitansiConfig();
+    const profil = pengaturanService.getProfil();
+    const todayStr = new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+
+    let titleText = '';
+    let tableHeaders: string[] = [];
+    let tableRowsHtml = '';
+    let tfootHtml = '';
+
+    if (activeTab === 'keuangan') {
+      titleText = `Laporan Rekapitulasi Keuangan ${bulan !== 'Semua' ? `- ${bulanLabel}` : ''} Tahun ${tahun}`;
+      if (jenisKeuangan !== 'Semua') titleText += ` (${jenisKeuangan})`;
+      tableHeaders = ['Tanggal', 'Kategori', 'Keterangan', 'Jenis', 'Nominal'];
+
+      const list = keuanganData?.list || [];
+      tableRowsHtml = list.map((item) => `
+        <tr>
+          <td>${item.tanggal}</td>
+          <td><b>${item.kategori_nama}</b></td>
+          <td>${item.keterangan || '-'}</td>
+          <td><span style="padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: 600; background: ${item.jenis === 'Pemasukan' ? '#ecfdf5' : '#fef2f2'}; color: ${item.jenis === 'Pemasukan' ? '#047857' : '#b91c1c'};">${item.jenis}</span></td>
+          <td style="text-align: right; font-family: monospace; font-weight: 600; color: ${item.jenis === 'Pemasukan' ? '#047857' : '#b91c1c'};">
+            ${item.jenis === 'Pemasukan' ? '+' : '-'} ${formatRupiah(item.nominal)}
+          </td>
+        </tr>
+      `).join('');
+
+      tfootHtml = `
+        <tr style="background: #f1f5f9; font-weight: bold;">
+          <td colspan="3" style="text-align: left;">TOTAL KESELURUHAN (${list.length} Transaksi) | Pemasukan: ${formatRupiah(keuanganData?.totalPemasukan || 0)} | Pengeluaran: ${formatRupiah(keuanganData?.totalPengeluaran || 0)}</td>
+          <td>Saldo Bersih</td>
+          <td style="text-align: right; font-family: monospace; color: #047857; font-size: 13px;">${formatRupiah(keuanganData?.saldoBersih || 0)}</td>
+        </tr>
+      `;
+    } else if (activeTab === 'santri') {
+      titleText = `Laporan Master Data Santri (Tahun ${tahun})`;
+      if (kategoriSantri !== 'Semua') titleText += ` - Kategori: ${kategoriSantri}`;
+      if (statusSantri !== 'Semua') titleText += ` - Status: ${statusSantri}`;
+      tableHeaders = ['NIS', 'Nama Santri', 'Kategori', 'Status', 'Nama Wali', 'No HP Wali'];
+
+      tableRowsHtml = santriData.map((s) => `
+        <tr>
+          <td style="font-family: monospace; font-weight: 600;">${s.nis}</td>
+          <td style="font-weight: bold;">${s.nama}</td>
+          <td>${s.kategori}</td>
+          <td><span style="padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: 600; background: ${s.status === 'Aktif' ? '#ecfdf5' : '#fef2f2'}; color: ${s.status === 'Aktif' ? '#047857' : '#b91c1c'};">${s.status}</span></td>
+          <td>${s.nama_wali || '-'}</td>
+          <td style="font-family: monospace;">${s.no_hp_wali || '-'}</td>
+        </tr>
+      `).join('');
+
+      const aktifCount = santriData.filter((s) => s.status === 'Aktif').length;
+      tfootHtml = `
+        <tr style="background: #f1f5f9; font-weight: bold;">
+          <td colspan="2">TOTAL SANTRI: ${santriData.length} Santri</td>
+          <td>${aktifCount} Aktif</td>
+          <td colspan="3"></td>
+        </tr>
+      `;
+    } else if (activeTab === 'pendaftaran') {
+      titleText = `Laporan Pendaftaran Santri Baru ${bulan !== 'Semua' ? `- ${bulanLabel}` : ''} Tahun ${tahun}`;
+      if (statusPendaftaran !== 'Semua') titleText += ` (${statusPendaftaran})`;
+      tableHeaders = ['Tgl Daftar', 'Nama Calon', 'Nama Wali', 'No HP', 'Kategori', 'Status'];
+
+      tableRowsHtml = pendaftaranData.map((p) => `
+        <tr>
+          <td style="font-family: monospace;">${p.tanggal_pendaftaran}</td>
+          <td style="font-weight: bold;">${p.nama_calon}</td>
+          <td>${p.nama_wali || '-'}</td>
+          <td style="font-family: monospace;">${p.no_hp_santri || '-'}</td>
+          <td>${p.kategori}</td>
+          <td><span style="padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: 600; background: #f1f5f9; color: #334155;">${p.status}</span></td>
+        </tr>
+      `).join('');
+
+      tfootHtml = `
+        <tr style="background: #f1f5f9; font-weight: bold;">
+          <td colspan="2">TOTAL PENDAFTAR: ${pendaftaranData.length} Pendaftar</td>
+          <td colspan="4"></td>
+        </tr>
+      `;
+    } else {
+      titleText = `Laporan Tahunan Rekap Syahriyah Santri (Tahun ${tahun})`;
+      if (kategoriSantri !== 'Semua') titleText += ` - Kategori: ${kategoriSantri}`;
+      tableHeaders = ['NIS', 'Nama Santri', 'Kategori', 'Tagihan 1 Thn', 'Total Dibayar', 'Sisa Tunggakan', 'Status'];
+
+      tableRowsHtml = syahriyahData.map((r) => `
+        <tr>
+          <td style="font-family: monospace; font-weight: 600;">${r.nis}</td>
+          <td style="font-weight: bold;">${r.nama}</td>
+          <td>${r.kategori}</td>
+          <td style="text-align: right; font-family: monospace;">${formatRupiah(r.totalTagihan)}</td>
+          <td style="text-align: right; font-family: monospace; color: #047857; font-weight: 600;">${formatRupiah(r.totalDibayar)}</td>
+          <td style="text-align: right; font-family: monospace; color: #dc2626; font-weight: 600;">${formatRupiah(r.sisaTunggakan)}</td>
+          <td style="text-align: center;">
+            <span style="padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: 600; background: ${r.statusTahunan === 'Lunas' ? '#ecfdf5' : r.statusTahunan === 'Sebagian' ? '#fef3c7' : '#f1f5f9'}; color: ${r.statusTahunan === 'Lunas' ? '#047857' : r.statusTahunan === 'Sebagian' ? '#d97706' : '#64748b'};">
+              ${r.statusTahunan === 'Lunas' ? 'Lunas' : r.statusTahunan === 'Sebagian' ? 'Sebagian' : 'Belum Bayar'}
+            </span>
+          </td>
+        </tr>
+      `).join('');
+
+      const sumTagihan = syahriyahData.reduce((sum, r) => sum + r.totalTagihan, 0);
+      const sumDibayar = syahriyahData.reduce((sum, r) => sum + r.totalDibayar, 0);
+      const sumTunggakan = syahriyahData.reduce((sum, r) => sum + r.sisaTunggakan, 0);
+
+      tfootHtml = `
+        <tr style="background: #f1f5f9; font-weight: bold;">
+          <td colspan="3">TOTAL (${syahriyahData.length} Santri)</td>
+          <td style="text-align: right; font-family: monospace;">${formatRupiah(sumTagihan)}</td>
+          <td style="text-align: right; font-family: monospace; color: #047857;">${formatRupiah(sumDibayar)}</td>
+          <td style="text-align: right; font-family: monospace; color: #dc2626;">${formatRupiah(sumTunggakan)}</td>
+          <td></td>
+        </tr>
+      `;
+    }
+
+    const kopLines = (kwitansiConfig.kop_surat || '').split('\n');
+    const kopHtml = kopLines
+      .map((line, idx) => (idx === 0 ? `<h1>${line}</h1>` : `<p>${line}</p>`))
+      .join('');
+
+    const printWindow = window.open('', '_blank', 'width=1000,height=700');
+    if (!printWindow) return;
+
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html lang="id">
+        <head>
+          <meta charset="UTF-8" />
+          <title>${titleText}</title>
+          <style>
+            @page { size: A4 landscape; margin: 15mm; }
+            * { box-sizing: border-box; }
+            body {
+              font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+              margin: 0;
+              padding: 0;
+              color: #0f172a;
+              background: #ffffff;
+              font-size: 12px;
+              line-height: 1.4;
+            }
+            .header-kop {
+              border-bottom: 2px solid #059669;
+              padding-bottom: 10px;
+              margin-bottom: 16px;
+            }
+            .header-kop h1 {
+              margin: 0 0 2px 0;
+              color: #047857;
+              font-size: 18px;
+              font-weight: 700;
+              text-transform: uppercase;
+            }
+            .header-kop p {
+              margin: 1px 0;
+              color: #64748b;
+              font-size: 11px;
+            }
+            .report-title {
+              text-align: center;
+              margin-bottom: 20px;
+            }
+            .report-title h2 {
+              margin: 0 0 4px 0;
+              font-size: 16px;
+              color: #0f172a;
+              text-transform: uppercase;
+            }
+            .report-title p {
+              margin: 0;
+              font-size: 11px;
+              color: #64748b;
+            }
+            table {
+              width: 100%;
+              border-collapse: collapse;
+              margin-bottom: 24px;
+            }
+            th, td {
+              border: 1px solid #cbd5e1;
+              padding: 6px 10px;
+              text-align: left;
+              font-size: 11.5px;
+            }
+            th {
+              background-color: #059669;
+              color: #ffffff;
+              font-weight: 600;
+              text-transform: uppercase;
+              font-size: 11px;
+            }
+            tr:nth-child(even) {
+              background-color: #f8fafc;
+            }
+            .footer-sign {
+              display: flex;
+              justify-content: flex-end;
+              margin-top: 30px;
+              text-align: center;
+            }
+            .sign-box {
+              width: 220px;
+            }
+            .sign-space {
+              height: 55px;
+            }
+            @media print {
+              body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="header-kop">
+            ${kopHtml}
+            <p>Pengasuh: ${profil.pengasuh || '-'}</p>
+          </div>
+
+          <div class="report-title">
+            <h2>${titleText}</h2>
+            <p>Dicetak pada: ${todayStr}</p>
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                ${tableHeaders.map((th) => `<th>${th}</th>`).join('')}
+              </tr>
+            </thead>
+            <tbody>
+              ${tableRowsHtml}
+            </tbody>
+            <tfoot>
+              ${tfootHtml}
+            </tfoot>
+          </table>
+
+          <div class="footer-sign">
+            <div class="sign-box">
+              <p>Pare, ${todayStr}</p>
+              <p><strong>Bendahara Pondok,</strong></p>
+              <div class="sign-space"></div>
+              <p><strong>( ${kwitansiConfig.nama_penandatangan || profil.bendahara || 'Shofil Mubarok'} )</strong></p>
+            </div>
+          </div>
+
+          <script>
+            window.onload = function() {
+              window.print();
+            };
+          </script>
+        </body>
+      </html>
+    `;
+
+    printWindow.document.write(htmlContent);
+    printWindow.document.close();
+  };
+
   return (
     <div className="space-y-6 pb-12">
       <ToastContainer />
@@ -317,6 +582,7 @@ export const LaporanPage: React.FC = () => {
               <option value={2024}>2024</option>
               <option value={2025}>2025</option>
               <option value={2026}>2026</option>
+              <option value={2027}>2027</option>
             </select>
           </div>
 
@@ -448,6 +714,15 @@ export const LaporanPage: React.FC = () => {
             >
               <FileSpreadsheet className="w-3.5 h-3.5" />
               <span>📊 Export Excel</span>
+            </button>
+
+            {/* Button 3: Export PDF */}
+            <button
+              onClick={handleExportPdf}
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-semibold transition-colors shadow-2xs"
+            >
+              <FileText className="w-3.5 h-3.5" />
+              <span>📄 Export PDF</span>
             </button>
           </div>
         </div>

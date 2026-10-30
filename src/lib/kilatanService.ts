@@ -9,6 +9,7 @@ import {
 import { Santri } from '../types/santri';
 import { santriService } from './santriService';
 import { kasService } from './kasService';
+import { isKilatanBeforeTanggalMasuk } from './formatter';
 
 const STORAGE_KEY = 'al_hidayah_kilatan';
 const TRANSAKSI_KEY = 'al_hidayah_kilatan_transaksi';
@@ -159,6 +160,10 @@ export const kilatanService = {
 
     // 1. Update Kilatan matrix records for selected items
     items.forEach((item) => {
+      if (isKilatanBeforeTanggalMasuk(santri.tanggal_masuk, item.tahun, item.event)) {
+        throw new Error('Gagal! Santri belum masuk pada periode tersebut.');
+      }
+
       let yearRecords = storedMatrix[santriId][item.tahun];
       if (!yearRecords) {
         yearRecords = generateMockKilatan(santriId, item.tahun);

@@ -55,6 +55,7 @@ interface KwitansiSettingConfig {
   kop_surat: string;
   footer_kwitansi: string;
   nama_penandatangan: string;
+  logo_base64?: string;
 }
 
 const STORAGE_KEY_IURAN = 'al_hidayah_iuran_tambahan';
@@ -71,11 +72,33 @@ const DEFAULT_KATEGORI_KAS: KategoriKasConfig = {
   pengeluaran: ['Operasional', 'Listrik & Air', 'Konsumsi', 'Pemeliharaan', 'Lain-lain'],
 };
 
+const BULAN_NAMES = [
+  'Januari',
+  'Februari',
+  'Maret',
+  'April',
+  'Mei',
+  'Juni',
+  'Juli',
+  'Agustus',
+  'September',
+  'Oktober',
+  'November',
+  'Desember',
+];
+
 export const PengaturanPage: React.FC = () => {
   const currentUser = authStore.getUser();
+  const isSuperAdmin = currentUser?.role === 'super_admin';
 
   const [activeTab, setActiveTab] = useState<ActiveTab>('profil');
   const tabContainerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (activeTab === 'kwitansi' && !isSuperAdmin) {
+      setActiveTab('profil');
+    }
+  }, [activeTab, isSuperAdmin]);
 
   const scrollTabs = (direction: 'left' | 'right') => {
     if (tabContainerRef.current) {
@@ -93,6 +116,19 @@ export const PengaturanPage: React.FC = () => {
   const [tarif, setTarif] = useState<TarifDefault>(
     pengaturanService.getTarif()
   );
+  const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
+  const [paidMonths, setPaidMonths] = useState<number[]>([]);
+  const [bulanEfektif, setBulanEfektif] = useState<number>(1);
+  const [tahunEfektif, setTahunEfektif] = useState<number>(new Date().getFullYear());
+  const [isTarifModalOpen, setIsTarifModalOpen] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (activeTab === 'tarif') {
+      pengaturanService.getPaidMonths(selectedYear).then((months) => {
+        setPaidMonths(months);
+      });
+    }
+  }, [activeTab, selectedYear]);
 
   // Users Table State
   const [users, setUsers] = useState<UserAccount[]>(
@@ -188,10 +224,25 @@ export const PengaturanPage: React.FC = () => {
   };
 
   // Submit Tarif
-  const handleSaveTarif = (e: React.FormEvent) => {
+  const handleSaveTarif = async (e: React.FormEvent) => {
     e.preventDefault();
-    pengaturanService.saveTarif(tarif);
-    showToast('Nominal tarif default berhasil disimpan!');
+    try {
+      await pengaturanService.validateAndSaveTarif(
+        tarif,
+        bulanEfektif,
+        tahunEfektif
+      );
+      showToast(
+        `Tarif default efektif bulan ${BULAN_NAMES[bulanEfektif - 1]} ${tahunEfektif} berhasil disimpan!`
+      );
+      setIsTarifModalOpen(false);
+    } catch (err: any) {
+      showToast(
+        err.message ||
+          'Gagal! Sudah ada pembayaran di bulan tersebut. Batalkan (Void) pembayaran terlebih dahulu.',
+        'error'
+      );
+    }
   };
 
   // User Actions
@@ -468,7 +519,7 @@ export const PengaturanPage: React.FC = () => {
             { key: 'users', label: 'Manajemen Pengguna', icon: Users },
             { key: 'iuran', label: 'Iuran Tambahan', icon: Layers },
             { key: 'kategori_kas', label: 'Kategori Kas', icon: DollarSign },
-            { key: 'kwitansi', label: 'Kop & Kwitansi', icon: FileText },
+            ...(isSuperAdmin ? [{ key: 'kwitansi', label: 'Kop & Kwitansi', icon: FileText }] : []),
             { key: 'backup', label: 'Backup & Restore', icon: Database },
           ].map((tab) => {
             const Icon = tab.icon;
@@ -594,90 +645,65 @@ export const PengaturanPage: React.FC = () => {
 
       {/* TAB 2: TARIF DEFAULT */}
       {activeTab === 'tarif' && (
-        <div className="bg-white border border-[#E2E8F0] rounded-2xl p-4 sm:p-6 shadow-xs">
-          <form onSubmit={handleSaveTarif} className="space-y-4 max-w-xl text-sm">
+        <div className="space-y-4">
+          <div className="flex items-center justify-between gap-4">
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Tarif Syahriyah - Santri Mukim (Rp / bulan)
-              </label>
-              <input
-                type="number"
-                min={0}
-                value={tarif.syahriyah_mukim}
-                onChange={(e) =>
-                  setTarif({
-                    ...tarif,
-                    syahriyah_mukim: Number(e.target.value) || 0,
-                  })
-                }
-                className="w-full px-3.5 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-[#059669] focus:border-transparent outline-none text-slate-800 font-mono"
-              />
+              <h2 className="text-base font-bold text-[#0F172A]">Pengaturan Tarif Default</h2>
+              <p className="text-xs text-slate-500">
+                Ringkasan tarif pembayaran santri yang berlaku saat ini.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsTarifModalOpen(true)}
+              className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-xl transition-colors shadow-xs flex items-center gap-2 cursor-pointer"
+            >
+              <DollarSign className="w-4 h-4" />
+              <span>Ubah Tarif Default</span>
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="bg-white border border-[#E2E8F0] rounded-2xl p-5 shadow-xs space-y-3">
+              <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
+                Syahriyah Mukim
+              </span>
+              <div className="text-xl font-bold text-slate-900 font-mono">
+                Rp {tarif.syahriyah_mukim.toLocaleString('id-ID')}
+                <span className="text-xs font-normal text-slate-500 ml-1">/ bulan</span>
+              </div>
             </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Tarif Syahriyah - Santri Nduduk (Rp / bulan)
-              </label>
-              <input
-                type="number"
-                min={0}
-                value={tarif.syahriyah_nduduk}
-                onChange={(e) =>
-                  setTarif({
-                    ...tarif,
-                    syahriyah_nduduk: Number(e.target.value) || 0,
-                  })
-                }
-                className="w-full px-3.5 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-[#059669] focus:border-transparent outline-none text-slate-800 font-mono"
-              />
+            <div className="bg-white border border-[#E2E8F0] rounded-2xl p-5 shadow-xs space-y-3">
+              <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
+                Syahriyah Nduduk
+              </span>
+              <div className="text-xl font-bold text-slate-900 font-mono">
+                Rp {tarif.syahriyah_nduduk.toLocaleString('id-ID')}
+                <span className="text-xs font-normal text-slate-500 ml-1">/ bulan</span>
+              </div>
             </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Tarif Syahriyah - Santri Kilatan (Rp / bulan)
-              </label>
-              <input
-                type="number"
-                min={0}
-                value={tarif.syahriyah_kilatan}
-                onChange={(e) =>
-                  setTarif({
-                    ...tarif,
-                    syahriyah_kilatan: Number(e.target.value) || 0,
-                  })
-                }
-                className="w-full px-3.5 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-[#059669] focus:border-transparent outline-none text-slate-800 font-mono"
-              />
+            <div className="bg-white border border-[#E2E8F0] rounded-2xl p-5 shadow-xs space-y-3">
+              <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
+                Syahriyah Kilatan
+              </span>
+              <div className="text-xl font-bold text-slate-900 font-mono">
+                Rp {tarif.syahriyah_kilatan.toLocaleString('id-ID')}
+                <span className="text-xs font-normal text-slate-500 ml-1">/ bulan</span>
+              </div>
             </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Tarif Event Kilatan (Rp / event)
-              </label>
-              <input
-                type="number"
-                min={0}
-                value={tarif.event_kilatan}
-                onChange={(e) =>
-                  setTarif({
-                    ...tarif,
-                    event_kilatan: Number(e.target.value) || 0,
-                  })
-                }
-                className="w-full px-3.5 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-[#059669] focus:border-transparent outline-none text-slate-800 font-mono"
-              />
+            <div className="bg-white border border-[#E2E8F0] rounded-2xl p-5 shadow-xs space-y-3">
+              <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
+                Event Kilatan
+              </span>
+              <div className="text-xl font-bold text-slate-900 font-mono">
+                Rp {tarif.event_kilatan.toLocaleString('id-ID')}
+                <span className="text-xs font-normal text-slate-500 ml-1">/ event</span>
+              </div>
             </div>
-
-            <div className="pt-4 border-t border-slate-100 flex justify-start">
-              <button
-                type="submit"
-                className="px-5 py-2.5 bg-[#059669] hover:bg-[#047857] text-white text-xs font-semibold rounded-xl transition-colors shadow-xs flex items-center gap-2 cursor-pointer"
-              >
-                <Save className="w-4 h-4" />
-                <span>Simpan Tarif</span>
-              </button>
-            </div>
-          </form>
+          </div>
         </div>
       )}
 
@@ -970,71 +996,235 @@ export const PengaturanPage: React.FC = () => {
         </div>
       )}
 
-      {/* TAB 6: KOP & KWITANSI */}
-      {activeTab === 'kwitansi' && (
-        <div className="bg-white border border-[#E2E8F0] rounded-2xl p-4 sm:p-6 shadow-xs">
-          <form onSubmit={handleSaveKwitansiConfig} className="space-y-4 max-w-2xl text-sm">
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Kop Surat (Multi-baris)
-              </label>
-              <textarea
-                rows={3}
-                value={kwitansiConfig.kop_surat}
-                onChange={(e) =>
-                  setKwitansiConfig({ ...kwitansiConfig, kop_surat: e.target.value })
-                }
-                className="w-full px-3.5 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-[#059669] focus:border-transparent outline-none text-slate-800 font-mono text-xs"
-              />
-              <p className="text-[11px] text-slate-400 mt-1">
-                Baris pertama akan dicetak tebal sebagai nama instansi / pondok.
-              </p>
+      {/* TAB 6: KOP & KWITANSI (Super Admin Only) */}
+      {activeTab === 'kwitansi' && isSuperAdmin && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+          {/* Left Column: Form */}
+          <div className="bg-white border border-[#E2E8F0] rounded-2xl p-5 sm:p-6 shadow-xs">
+            <h2 className="text-base font-bold text-slate-900 mb-1">Kustomisasi Template PDF / Kwitansi</h2>
+            <p className="text-xs text-slate-500 mb-5">
+              Atur kop surat, penandatangan, dan footer kwitansi. Perubahan akan langsung terlihat pada preview di sebelah kanan.
+            </p>
+
+            <form onSubmit={handleSaveKwitansiConfig} className="space-y-4 text-sm">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Kop Surat (Multi-baris)
+                </label>
+                <textarea
+                  rows={3}
+                  value={kwitansiConfig.kop_surat}
+                  onChange={(e) =>
+                    setKwitansiConfig({ ...kwitansiConfig, kop_surat: e.target.value })
+                  }
+                  className="w-full px-3.5 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-[#059669] focus:border-transparent outline-none text-slate-800 font-mono text-xs"
+                />
+                <p className="text-[11px] text-slate-400 mt-1">
+                  Baris pertama akan dicetak tebal sebagai nama instansi / pondok.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Logo Pondok (Opsional)
+                </label>
+                <div className="flex items-center gap-3">
+                  {kwitansiConfig.logo_base64 && (
+                    <img
+                      src={kwitansiConfig.logo_base64}
+                      alt="Logo"
+                      className="w-10 h-10 object-contain border border-slate-200 rounded-lg p-0.5 bg-slate-50"
+                    />
+                  )}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        const reader = new FileReader();
+                        reader.onload = (uploadEvent) => {
+                          const base64 = uploadEvent.target?.result as string;
+                          setKwitansiConfig({ ...kwitansiConfig, logo_base64: base64 });
+                        };
+                        reader.readAsDataURL(file);
+                      }
+                    }}
+                    className="text-xs text-slate-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-emerald-50 file:text-emerald-700 hover:file:bg-emerald-100 cursor-pointer"
+                  />
+                  {kwitansiConfig.logo_base64 && (
+                    <button
+                      type="button"
+                      onClick={() => setKwitansiConfig({ ...kwitansiConfig, logo_base64: undefined })}
+                      className="text-xs text-red-600 hover:underline cursor-pointer"
+                    >
+                      Hapus
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Nama Penandatangan (Bendahara)
+                </label>
+                <input
+                  type="text"
+                  value={kwitansiConfig.nama_penandatangan}
+                  onChange={(e) =>
+                    setKwitansiConfig({
+                      ...kwitansiConfig,
+                      nama_penandatangan: e.target.value,
+                    })
+                  }
+                  className="w-full px-3.5 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-[#059669] focus:border-transparent outline-none text-slate-800 text-xs"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Footer / Catatan Kwitansi
+                </label>
+                <textarea
+                  rows={2}
+                  value={kwitansiConfig.footer_kwitansi}
+                  onChange={(e) =>
+                    setKwitansiConfig({
+                      ...kwitansiConfig,
+                      footer_kwitansi: e.target.value,
+                    })
+                  }
+                  className="w-full px-3.5 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-[#059669] focus:border-transparent outline-none text-slate-800 text-xs"
+                />
+              </div>
+
+              <div className="pt-4 border-t border-slate-100 flex justify-start">
+                <button
+                  type="submit"
+                  className="px-5 py-2.5 bg-[#059669] hover:bg-[#047857] text-white text-xs font-semibold rounded-xl transition-colors shadow-xs flex items-center gap-2 cursor-pointer"
+                >
+                  <Save className="w-4 h-4" />
+                  <span>Simpan Pengaturan Kwitansi</span>
+                </button>
+              </div>
+            </form>
+          </div>
+
+          {/* Right Column: Real-Time A4 Preview Box */}
+          <div className="bg-slate-100 border border-slate-200 rounded-2xl p-4 sm:p-6 shadow-xs flex flex-col items-center">
+            <div className="w-full flex items-center justify-between mb-3">
+              <span className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                <FileText className="w-4 h-4 text-emerald-600" />
+                Preview Real-Time Kwitansi / PDF
+              </span>
+              <span className="text-[10px] bg-emerald-100 text-emerald-800 font-semibold px-2 py-0.5 rounded-md">
+                A4 / Kwitansi Format
+              </span>
             </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Footer / Catatan Kwitansi
-              </label>
-              <textarea
-                rows={2}
-                value={kwitansiConfig.footer_kwitansi}
-                onChange={(e) =>
-                  setKwitansiConfig({
-                    ...kwitansiConfig,
-                    footer_kwitansi: e.target.value,
-                  })
-                }
-                className="w-full px-3.5 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-[#059669] focus:border-transparent outline-none text-slate-800 text-xs"
-              />
-            </div>
+            {/* Paper Container (A4 proportion styling) */}
+            <div className="w-full bg-white border border-slate-300 rounded-lg shadow-md p-6 text-xs text-slate-900 space-y-4 font-sans relative">
+              {/* Kop Surat Preview */}
+              <div className="border-b-2 border-emerald-600 pb-3 flex items-center gap-3">
+                {kwitansiConfig.logo_base64 && (
+                  <img
+                    src={kwitansiConfig.logo_base64}
+                    alt="Logo"
+                    className="w-10 h-10 object-contain shrink-0"
+                  />
+                )}
+                <div className="space-y-1 flex-1">
+                  {kwitansiConfig.kop_surat.split('\n').map((line, idx) =>
+                    idx === 0 ? (
+                      <h3 key={idx} className="font-bold text-emerald-700 text-sm uppercase tracking-wide">
+                        {line || 'NAMA PONDOK'}
+                      </h3>
+                    ) : (
+                      <p key={idx} className="text-[11px] text-slate-600">
+                        {line}
+                      </p>
+                    )
+                  )}
+                  <p className="text-[10px] text-slate-500 pt-0.5">Pengasuh: {profil.pengasuh || '-'}</p>
+                </div>
+              </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Nama Penandatangan (Bendahara)
-              </label>
-              <input
-                type="text"
-                value={kwitansiConfig.nama_penandatangan}
-                onChange={(e) =>
-                  setKwitansiConfig({
-                    ...kwitansiConfig,
-                    nama_penandatangan: e.target.value,
-                  })
-                }
-                className="w-full px-3.5 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-[#059669] focus:border-transparent outline-none text-slate-800 text-xs"
-              />
-            </div>
+              {/* Title */}
+              <div className="text-center space-y-0.5">
+                <h4 className="font-bold text-slate-900 uppercase text-xs tracking-wider">KWITANSI PEMBAYARAN</h4>
+                <p className="text-[10px] text-slate-500 font-mono">No: KWT-20261030-001</p>
+              </div>
 
-            <div className="pt-4 border-t border-slate-100 flex justify-start">
-              <button
-                type="submit"
-                className="px-5 py-2.5 bg-[#059669] hover:bg-[#047857] text-white text-xs font-semibold rounded-xl transition-colors shadow-xs flex items-center gap-2 cursor-pointer"
-              >
-                <Save className="w-4 h-4" />
-                <span>Simpan Pengaturan Kwitansi</span>
-              </button>
+              {/* Info Santri */}
+              <div className="bg-slate-50 border border-slate-200 rounded-md p-3 grid grid-cols-2 gap-2 text-[11px]">
+                <div>
+                  <p className="text-slate-500">Telah Terima Dari:</p>
+                  <p className="font-bold text-slate-800">Ahmad Fauzi (Santri)</p>
+                  <p className="text-slate-500 mt-1">NIS / Kategori:</p>
+                  <p className="font-mono text-slate-700">1024 / Mukim</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-slate-500">Tanggal Bayar:</p>
+                  <p className="font-semibold text-slate-800">30 Oktober 2026</p>
+                  <p className="text-slate-500 mt-1">Metode:</p>
+                  <p className="font-semibold text-slate-800">Tunai</p>
+                </div>
+              </div>
+
+              {/* Dummy Table */}
+              <table className="w-full border-collapse border border-slate-300 text-[11px]">
+                <thead>
+                  <tr className="bg-emerald-600 text-white font-semibold">
+                    <th className="border border-slate-300 p-1.5 text-center w-8">No</th>
+                    <th className="border border-slate-300 p-1.5 text-left">Rincian Pembayaran</th>
+                    <th className="border border-slate-300 p-1.5 text-right">Nominal</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td className="border border-slate-300 p-1.5 text-center font-mono">1</td>
+                    <td className="border border-slate-300 p-1.5">Syahriyah Bulan Oktober 2026 (Penuh)</td>
+                    <td className="border border-slate-300 p-1.5 text-right font-mono font-semibold">Rp 150.000</td>
+                  </tr>
+                </tbody>
+                <tfoot>
+                  <tr className="bg-slate-100 font-bold">
+                    <td colSpan={2} className="border border-slate-300 p-1.5 text-right">TOTAL PEMBAYARAN</td>
+                    <td className="border border-slate-300 p-1.5 text-right font-mono text-emerald-700">Rp 150.000</td>
+                  </tr>
+                </tfoot>
+              </table>
+
+              {/* Terbilang */}
+              <div className="bg-emerald-50 border border-emerald-200 rounded-md p-2 text-[11px] italic text-emerald-900">
+                <strong>Terbilang:</strong> # Seratus Lima Puluh Ribu Rupiah #
+              </div>
+
+              {/* Footer Note */}
+              {kwitansiConfig.footer_kwitansi && (
+                <p className="text-[10px] text-slate-500 italic">
+                  Catatan: {kwitansiConfig.footer_kwitansi}
+                </p>
+              )}
+
+              {/* Signature */}
+              <div className="flex justify-between items-end pt-4 text-[11px]">
+                <div>
+                  <p className="text-slate-600">Penyetor,</p>
+                  <div className="h-10"></div>
+                  <p className="text-slate-800">( ............................. )</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-slate-600">Pare, 30 Oktober 2026</p>
+                  <p className="font-semibold text-slate-800">Bendahara Pondok,</p>
+                  <div className="h-10"></div>
+                  <p className="font-bold text-slate-900 underline">
+                    ( {kwitansiConfig.nama_penandatangan || 'Shofil Mubarok'} )
+                  </p>
+                </div>
+              </div>
             </div>
-          </form>
+          </div>
         </div>
       )}
 
@@ -1196,6 +1386,218 @@ export const PengaturanPage: React.FC = () => {
                   className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold shadow-xs cursor-pointer"
                 >
                   Simpan
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Pengaturan Tarif Baru */}
+      {isTarifModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="fixed inset-0 bg-black/50 backdrop-blur-xs"
+            onClick={() => setIsTarifModalOpen(false)}
+          />
+          <div className="relative w-full max-w-2xl bg-white rounded-2xl shadow-2xl p-6 z-10 space-y-5 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b pb-3">
+              <h3 className="text-base font-bold text-slate-900">
+                Pengaturan Tarif Baru
+              </h3>
+              <button
+                type="button"
+                onClick={() => setIsTarifModalOpen(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveTarif} className="space-y-5 text-xs">
+              {/* Bagian Periode Efektif (Month Picker) */}
+              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+                      Bulan & Tahun Efektif Tarif
+                    </h4>
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      Pilih bulan dan tahun kapan tarif ini akan mulai berlaku.
+                    </p>
+                  </div>
+                  {/* Year Navigation */}
+                  <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-slate-300 shadow-2xs">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedYear(selectedYear - 1)}
+                      className="p-1 rounded-lg hover:bg-slate-100 text-slate-700 transition-colors cursor-pointer"
+                      title="Tahun Sebelumnya"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                    </button>
+                    <span className="text-xs font-bold font-mono text-slate-900 w-10 text-center">
+                      {selectedYear}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedYear(selectedYear + 1)}
+                      className="p-1 rounded-lg hover:bg-slate-100 text-slate-700 transition-colors cursor-pointer"
+                      title="Tahun Berikutnya"
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* 12 Months Grid */}
+                <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 pt-1">
+                  {BULAN_NAMES.map((namaBulan, idx) => {
+                    const bulanNum = idx + 1;
+                    const isPaid = paidMonths.includes(bulanNum);
+                    const isSelected =
+                      bulanEfektif === bulanNum && tahunEfektif === selectedYear;
+
+                    let btnClass = '';
+                    if (isPaid) {
+                      btnClass =
+                        'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed opacity-75';
+                    } else if (isSelected) {
+                      btnClass =
+                        'bg-emerald-600 text-white border-emerald-600 shadow-sm';
+                    } else {
+                      btnClass =
+                        'bg-white text-slate-700 border-slate-300 hover:border-emerald-500 hover:bg-emerald-50/50 cursor-pointer';
+                    }
+
+                    return (
+                      <button
+                        key={bulanNum}
+                        type="button"
+                        disabled={isPaid}
+                        onClick={() => {
+                          if (!isPaid) {
+                            setBulanEfektif(bulanNum);
+                            setTahunEfektif(selectedYear);
+                          }
+                        }}
+                        className={`px-3 py-2.5 rounded-xl border text-xs font-semibold transition-all flex flex-col items-center justify-center gap-0.5 ${btnClass}`}
+                        title={
+                          isPaid
+                            ? 'Tidak dapat dipilih. Sudah ada pembayaran di bulan ini.'
+                            : `Pilih efektif ${namaBulan} ${selectedYear}`
+                        }
+                      >
+                        <span>{namaBulan}</span>
+                        {isPaid && (
+                          <span className="text-[9px] text-slate-400 font-normal">
+                            Sudah Bayar
+                          </span>
+                        )}
+                        {isSelected && !isPaid && (
+                          <span className="text-[9px] text-emerald-100 font-normal">
+                            Terpilih
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Bagian Nominal Tarif Baru */}
+              <div className="space-y-4">
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">
+                    Tarif Syahriyah - Santri Mukim (Rp / bulan) <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    required
+                    value={tarif.syahriyah_mukim}
+                    onChange={(e) =>
+                      setTarif({
+                        ...tarif,
+                        syahriyah_mukim: Number(e.target.value) || 0,
+                      })
+                    }
+                    className="w-full px-3.5 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-[#059669] focus:border-transparent outline-none text-slate-800 font-mono text-xs"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">
+                    Tarif Syahriyah - Santri Nduduk (Rp / bulan) <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    required
+                    value={tarif.syahriyah_nduduk}
+                    onChange={(e) =>
+                      setTarif({
+                        ...tarif,
+                        syahriyah_nduduk: Number(e.target.value) || 0,
+                      })
+                    }
+                    className="w-full px-3.5 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-[#059669] focus:border-transparent outline-none text-slate-800 font-mono text-xs"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">
+                    Tarif Syahriyah - Santri Kilatan (Rp / bulan) <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    required
+                    value={tarif.syahriyah_kilatan}
+                    onChange={(e) =>
+                      setTarif({
+                        ...tarif,
+                        syahriyah_kilatan: Number(e.target.value) || 0,
+                      })
+                    }
+                    className="w-full px-3.5 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-[#059669] focus:border-transparent outline-none text-slate-800 font-mono text-xs"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">
+                    Tarif Event Kilatan (Rp / event) <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    required
+                    value={tarif.event_kilatan}
+                    onChange={(e) =>
+                      setTarif({
+                        ...tarif,
+                        event_kilatan: Number(e.target.value) || 0,
+                      })
+                    }
+                    className="w-full px-3.5 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-[#059669] focus:border-transparent outline-none text-slate-800 font-mono text-xs"
+                  />
+                </div>
+              </div>
+
+              {/* Footer Modal */}
+              <div className="flex justify-end gap-2 pt-3 border-t">
+                <button
+                  type="button"
+                  onClick={() => setIsTarifModalOpen(false)}
+                  className="px-4 py-2 border border-slate-300 text-slate-700 rounded-xl font-semibold hover:bg-slate-100 cursor-pointer"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold shadow-xs cursor-pointer"
+                >
+                  Simpan Tarif Baru
                 </button>
               </div>
             </form>

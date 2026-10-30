@@ -10,6 +10,7 @@ import { Santri } from '../types/santri';
 import { santriService } from './santriService';
 import { kasService } from './kasService';
 import { waiverService } from './waiverService';
+import { isBeforeTanggalMasuk } from './formatter';
 
 const STORAGE_KEY = 'al_hidayah_syahriyah';
 const TRANSAKSI_KEY = 'al_hidayah_syahriyah_transaksi';
@@ -224,6 +225,10 @@ export const syahriyahService = {
 
     // 1. Update Syahriyah matrix records for selected items
     items.forEach((item) => {
+      if (isBeforeTanggalMasuk(santri.tanggal_masuk, item.tahun, item.bulan)) {
+        throw new Error('Gagal! Santri belum masuk pada periode tersebut.');
+      }
+
       let yearRecords = storedMatrix[santriId][item.tahun];
       if (!yearRecords) {
         const santriWaivers = waiverService

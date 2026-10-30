@@ -27,6 +27,7 @@ export interface KwitansiConfig {
   kop_surat: string;
   footer_kwitansi: string;
   nama_penandatangan: string;
+  logo_base64?: string;
 }
 
 export function getKwitansiConfig(): KwitansiConfig {
@@ -54,6 +55,10 @@ export function getKwitansiConfig(): KwitansiConfig {
         typeof parsed.nama_penandatangan === 'string' && parsed.nama_penandatangan.trim()
           ? parsed.nama_penandatangan
           : defaultConfig.nama_penandatangan,
+      logo_base64:
+        typeof parsed.logo_base64 === 'string' && parsed.logo_base64.trim()
+          ? parsed.logo_base64
+          : undefined,
     };
   } catch {
     return defaultConfig;
@@ -444,6 +449,14 @@ export function printKwitansiHtml(
             border-bottom: 2px solid #059669;
             padding-bottom: 12px;
             margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+          }
+          .kop img {
+            width: 48px;
+            height: 48px;
+            object-fit: contain;
           }
           .kop h1 {
             margin: 0 0 4px 0;
@@ -535,8 +548,11 @@ export function printKwitansiHtml(
       <body>
         <div class="kwitansi-container">
           <div class="kop">
-            ${kopHtml}
-            <p>Pengasuh: ${profil.pengasuh || '-'}</p>
+            ${config.logo_base64 ? `<img src="${config.logo_base64}" alt="Logo" />` : ''}
+            <div>
+              ${kopHtml}
+              <p>Pengasuh: ${profil.pengasuh || '-'}</p>
+            </div>
           </div>
 
           <div class="title-section">
@@ -605,6 +621,141 @@ export function printKwitansiHtml(
               <p><strong>( ${config.nama_penandatangan || profil.bendahara || 'Shofil Mubarok'} )</strong></p>
             </div>
           </div>
+        </div>
+
+        <script>
+          window.onload = function() {
+            window.print();
+          };
+        </script>
+      </body>
+    </html>
+  `;
+
+  printWindow.document.write(htmlContent);
+  printWindow.document.close();
+}
+
+/**
+ * Opens a thermal receipt print window (58mm width).
+ */
+export function printKwitansiThermal(
+  inputOrTransaksi: any,
+  dataSantriOrProfil?: any,
+  dataProfilParam?: any
+): void {
+  const { input, profil, config } = parseInputData(
+    inputOrTransaksi,
+    dataSantriOrProfil,
+    dataProfilParam
+  );
+
+  const allItems = [...input.items, ...(input.iuranTambahan || [])];
+  const kopText = (config.kop_surat || '').split('\n')[0] || 'PONDOK AL HIDAYAH';
+
+  const printWindow = window.open('', '_blank', 'width=350,height=600');
+  if (!printWindow) return;
+
+  const htmlContent = `
+    <!DOCTYPE html>
+    <html lang="id">
+      <head>
+        <meta charset="UTF-8" />
+        <title>Struk Thermal ${input.idTransaksi}</title>
+        <style>
+          @page {
+            margin: 0;
+            size: 58mm auto;
+          }
+          * { box-sizing: border-box; }
+          body {
+            font-family: 'Courier New', Courier, monospace;
+            width: 58mm;
+            margin: 0 auto;
+            padding: 8px;
+            color: #000000;
+            background: #ffffff;
+            font-size: 11px;
+            line-height: 1.2;
+          }
+          .text-center { text-align: center; }
+          .text-right { text-align: right; }
+          .font-bold { font-weight: bold; }
+          .logo {
+            max-width: 40px;
+            max-height: 40px;
+            display: block;
+            margin: 0 auto 4px auto;
+            filter: grayscale(100%);
+          }
+          .divider {
+            border-top: 1px dashed #000;
+            margin: 6px 0;
+          }
+          table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 10px;
+          }
+          th, td {
+            padding: 2px 0;
+            vertical-align: top;
+          }
+          .footer {
+            text-align: center;
+            margin-top: 10px;
+            font-size: 10px;
+          }
+        </style>
+      </head>
+      <body>
+        ${config.logo_base64 ? `<img src="${config.logo_base64}" class="logo" alt="Logo" />` : ''}
+        <div class="text-center font-bold" style="font-size: 12px;">${kopText}</div>
+        <div class="text-center" style="font-size: 9px; margin-bottom: 4px;">${(config.kop_surat || '').split('\n').slice(1).join(', ')}</div>
+        
+        <div class="divider"></div>
+        
+        <div style="font-size: 10px;">
+          <div>No : ${input.idTransaksi}</div>
+          <div>Tgl: ${formatDateIndo(input.tanggalBayar)}</div>
+          <div>Nama: ${input.santri.nama || '-'} (${input.santri.nis || '-'})</div>
+          <div>Metode: ${input.metode || 'Tunai'}</div>
+        </div>
+
+        <div class="divider"></div>
+
+        <table>
+          <tbody>
+            ${allItems
+              .map(
+                (item) => `
+              <tr>
+                <td colspan="2">${item.deskripsi}</td>
+              </tr>
+              <tr>
+                <td></td>
+                <td class="text-right">${formatRupiah(item.nominal)}</td>
+              </tr>
+            `
+              )
+              .join('')}
+          </tbody>
+        </table>
+
+        <div class="divider"></div>
+
+        <div style="display: flex; justify-content: space-between; font-weight: bold; font-size: 12px;">
+          <span>TOTAL:</span>
+          <span>${formatRupiah(input.totalPembayaran)}</span>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="footer">
+          <div>Terbilang:</div>
+          <div style="font-style: italic; font-size: 9px; margin-bottom: 6px;"># ${terbilang(input.totalPembayaran)} #</div>
+          <div>${config.footer_kwitansi || 'Terima kasih atas pembayaran Anda'}</div>
+          <div style="margin-top: 6px; font-size: 9px;">Bendahara: ${config.nama_penandatangan || 'Shofil Mubarok'}</div>
         </div>
 
         <script>

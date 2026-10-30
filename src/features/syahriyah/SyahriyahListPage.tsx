@@ -12,7 +12,7 @@ import {
 import { SyahriyahBulan } from '../../types/syahriyah';
 import { Santri } from '../../types/santri';
 import { syahriyahService } from '../../lib/syahriyahService';
-import { formatRupiah } from '../../lib/formatter';
+import { formatRupiah, isBeforeTanggalMasuk } from '../../lib/formatter';
 import { ToastContainer, showToast } from '../../components/ui/Toast';
 import { SyahriyahPaymentModal } from './SyahriyahPaymentModal';
 
@@ -37,7 +37,7 @@ interface MatrixRow {
 }
 
 export const SyahriyahListPage: React.FC = () => {
-  const [tahun, setTahun] = useState<number>(2025);
+  const [tahun, setTahun] = useState<number>(new Date().getFullYear());
   const [filterKategori, setFilterKategori] = useState<string>('Semua');
   const [searchQuery, setSearchQuery] = useState<string>('');
 
@@ -103,8 +103,9 @@ export const SyahriyahListPage: React.FC = () => {
   const endItem = Math.min(currentPage * pageSize, totalFiltered);
 
   const handleCellClick = (santri: Santri, record: SyahriyahBulan) => {
-    if (santri.status_syahriyah === 'Bebas' || record.status === 'Bebas') {
-      return; // Disabled for Bebas santri
+    const isBeforeMasuk = isBeforeTanggalMasuk(santri.tanggal_masuk, tahun, record.bulan);
+    if (santri.status_syahriyah === 'Bebas' || record.status === 'Bebas' || isBeforeMasuk) {
+      return; // Disabled for Bebas santri or before masuk
     }
     setActiveSantri(santri);
     setActiveBulanNum(record.bulan);
@@ -166,6 +167,7 @@ export const SyahriyahListPage: React.FC = () => {
               <option value={2024}>Tahun 2024</option>
               <option value={2025}>Tahun 2025</option>
               <option value={2026}>Tahun 2026</option>
+              <option value={2027}>Tahun 2027</option>
             </select>
           </div>
 
@@ -185,13 +187,13 @@ export const SyahriyahListPage: React.FC = () => {
         </div>
 
         {/* Reset Filter Action */}
-        {(searchQuery || filterKategori !== 'Semua' || tahun !== 2025) && (
+        {(searchQuery || filterKategori !== 'Semua' || tahun !== new Date().getFullYear()) && (
           <div className="flex justify-end pt-3 border-t border-slate-100 mt-3">
             <button
               onClick={() => {
                 setSearchQuery('');
                 setFilterKategori('Semua');
-                setTahun(2025);
+                setTahun(new Date().getFullYear());
               }}
               className="inline-flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-800 transition-colors py-1 px-2.5 rounded-md hover:bg-slate-100 cursor-pointer"
             >
@@ -295,18 +297,23 @@ export const SyahriyahListPage: React.FC = () => {
                       {/* 12 Month Cells */}
                       {records.map((rec) => {
                         const sisaTagihan = rec.nominal_tagihan - rec.total_dibayar;
+                        const isBeforeMasuk = isBeforeTanggalMasuk(santri.tanggal_masuk, tahun, rec.bulan);
 
                         return (
                           <td
                             key={rec.bulan}
                             onClick={() => handleCellClick(santri, rec)}
                             className={`p-1 text-center border-r border-slate-100 select-none relative group/cell ${
-                              isBebas ? 'cursor-not-allowed bg-slate-50/60' : 'cursor-pointer'
+                              isBebas || isBeforeMasuk ? 'cursor-not-allowed bg-slate-50/60' : 'cursor-pointer'
                             }`}
                           >
                             {/* Custom Floating Hover Tooltip */}
                             <div className="absolute bottom-full mb-1.5 left-1/2 -translate-x-1/2 opacity-0 group-hover/cell:opacity-100 transition-opacity duration-150 pointer-events-none z-30 whitespace-nowrap shadow-lg">
-                              {isBebas ? (
+                              {isBeforeMasuk ? (
+                                <div className="bg-slate-800 text-white font-medium text-[11px] px-2.5 py-1 rounded-md shadow-md border border-slate-700">
+                                  Santri belum masuk pada bulan ini.
+                                </div>
+                              ) : isBebas ? (
                                 <div className="bg-slate-800 text-white font-medium text-[11px] px-2.5 py-1 rounded-md shadow-md border border-slate-700">
                                   Santri Bebas Syahriyah
                                 </div>
@@ -330,7 +337,11 @@ export const SyahriyahListPage: React.FC = () => {
                             </div>
 
                             {/* Cell Badge */}
-                            {isBebas ? (
+                            {isBeforeMasuk ? (
+                              <div className="w-full py-1.5 px-1 rounded-md bg-slate-100 text-slate-400 font-medium text-[10px] border border-slate-200 flex items-center justify-center gap-0.5">
+                                <span>—</span>
+                              </div>
+                            ) : isBebas ? (
                               <div className="w-full py-1.5 px-1 rounded-md bg-slate-200 text-slate-700 font-bold text-[10px] border border-slate-300 flex items-center justify-center gap-0.5 shadow-2xs">
                                 <span>Bebas</span>
                               </div>

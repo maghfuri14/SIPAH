@@ -24,8 +24,8 @@ import {
 } from '../../lib/kilatanService';
 import { santriService } from '../../lib/santriService';
 import { showToast } from '../../components/ui/Toast';
-import { formatRupiah, formatThousand, parseThousand } from '../../lib/formatter';
-import { generateKwitansiPdf, printKwitansiHtml } from '../../lib/pdfHelper';
+import { formatRupiah, formatThousand, parseThousand, isKilatanBeforeTanggalMasuk } from '../../lib/formatter';
+import { generateKwitansiPdf, printKwitansiHtml, printKwitansiThermal } from '../../lib/pdfHelper';
 
 interface KilatanPaymentModalProps {
   isOpen: boolean;
@@ -135,6 +135,8 @@ export const KilatanPaymentModal: React.FC<KilatanPaymentModalProps> = ({
 
   // Toggle event selection in selectedYear
   const handleToggleEvent = (event: EventKilatan) => {
+    const isBeforeMasuk = isKilatanBeforeTanggalMasuk(selectedSantri?.tanggal_masuk, selectedYear, event);
+    if (isBeforeMasuk) return;
     const rec = currentYearRecords.find((r) => r.event === event);
     if (!rec || rec.status === 'Lunas') return;
 
@@ -289,6 +291,13 @@ export const KilatanPaymentModal: React.FC<KilatanPaymentModalProps> = ({
       return;
     }
 
+    for (const item of selectedItemsList) {
+      if (selectedSantri && isKilatanBeforeTanggalMasuk(selectedSantri.tanggal_masuk, item.tahun, item.event)) {
+        showToast(`Gagal! Santri belum masuk pada event ${item.event} ${item.tahun}.`, 'error');
+        return;
+      }
+    }
+
     setIsSubmitting(true);
     try {
       const rec = await kilatanService.simpanPembayaranKilatan(
@@ -326,6 +335,11 @@ export const KilatanPaymentModal: React.FC<KilatanPaymentModalProps> = ({
     printKwitansiHtml(savedRecord, selectedSantri);
   };
 
+  const handlePrintThermal = () => {
+    if (!savedRecord || !selectedSantri) return;
+    printKwitansiThermal(savedRecord, selectedSantri);
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -336,7 +350,7 @@ export const KilatanPaymentModal: React.FC<KilatanPaymentModalProps> = ({
       {/* Modal Dialog */}
       <div className="relative w-full max-w-2xl bg-white h-full sm:h-auto sm:max-h-[92vh] rounded-none sm:rounded-2xl shadow-2xl flex flex-col z-10 overflow-hidden">
         {isSuccess && savedRecord && selectedSantri ? (
-          /* SUCCESS VIEW WITH 2 ACTION BUTTONS: UNDUH PDF & CETAK */
+          /* SUCCESS VIEW WITH 3 ACTION BUTTONS */
           <div className="flex flex-col h-full sm:h-auto p-6 sm:p-8 text-center items-center justify-center space-y-4">
             <button
               onClick={onClose}
@@ -379,12 +393,12 @@ export const KilatanPaymentModal: React.FC<KilatanPaymentModalProps> = ({
               </div>
             </div>
 
-            {/* 2 Action Buttons Side-by-Side */}
-            <div className="flex gap-2 w-full mt-6">
+            {/* 3 Action Buttons */}
+            <div className="grid grid-cols-3 gap-2 w-full mt-6">
               <button
                 type="button"
                 onClick={handleDownloadPdf}
-                className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs py-2.5 px-4 rounded-xl flex items-center justify-center gap-2 transition-colors shadow-xs cursor-pointer"
+                className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs py-2.5 px-2 rounded-xl flex flex-col items-center justify-center gap-1 transition-colors shadow-xs cursor-pointer"
               >
                 <Download className="w-4 h-4" />
                 <span>Unduh PDF</span>
@@ -393,10 +407,19 @@ export const KilatanPaymentModal: React.FC<KilatanPaymentModalProps> = ({
               <button
                 type="button"
                 onClick={handlePrint}
-                className="flex-1 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-semibold text-xs py-2.5 px-4 rounded-xl flex items-center justify-center gap-2 transition-colors shadow-xs cursor-pointer"
+                className="bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-semibold text-xs py-2.5 px-2 rounded-xl flex flex-col items-center justify-center gap-1 transition-colors shadow-xs cursor-pointer"
               >
                 <Printer className="w-4 h-4" />
-                <span>Cetak</span>
+                <span>Cetak A4</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handlePrintThermal}
+                className="bg-slate-800 hover:bg-slate-900 text-white font-semibold text-xs py-2.5 px-2 rounded-xl flex flex-col items-center justify-center gap-1 transition-colors shadow-xs cursor-pointer"
+              >
+                <Printer className="w-4 h-4" />
+                <span>Cetak Thermal</span>
               </button>
             </div>
 
@@ -553,7 +576,8 @@ export const KilatanPaymentModal: React.FC<KilatanPaymentModalProps> = ({
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                       {KILATAN_EVENTS.map((eventName) => {
                         const rec = currentYearRecords.find((r) => r.event === eventName);
-                        const isLunas = rec?.status === 'Lunas';
+                        const isBeforeMasuk = isKilatanBeforeTanggalMasuk(selectedSantri?.tanggal_masuk, selectedYear, eventName);
+                        const isLunas = rec?.status === 'Lunas' || isBeforeMasuk;
 
                         const itemKey = `${selectedYear}-${eventName}`;
                         const isSelected = Boolean(itemInputs[itemKey]);
@@ -573,7 +597,9 @@ export const KilatanPaymentModal: React.FC<KilatanPaymentModalProps> = ({
                             }`}
                           >
                             <span className="font-bold text-center">{eventName}</span>
-                            {isLunas ? (
+                            {isBeforeMasuk ? (
+                              <span className="text-[10px] text-slate-400 font-normal mt-0.5">Belum Masuk</span>
+                            ) : rec?.status === 'Lunas' ? (
                               <span className="text-[10px] text-slate-400 font-normal mt-0.5">Lunas</span>
                             ) : rec?.status === 'Sebagian' ? (
                               <span

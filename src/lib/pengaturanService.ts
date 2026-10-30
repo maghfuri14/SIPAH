@@ -1,4 +1,5 @@
 import { ProfilPondok, TarifDefault, UserAccount } from '../types/pengaturan';
+import { syahriyahService } from './syahriyahService';
 
 const KEY_PROFIL = 'al_hidayah_profil';
 const KEY_TARIF = 'al_hidayah_tarif';
@@ -75,6 +76,47 @@ export const pengaturanService = {
 
   saveTarif(tarif: TarifDefault): void {
     localStorage.setItem(KEY_TARIF, JSON.stringify(tarif));
+  },
+
+  async getPaidMonths(tahun: number): Promise<number[]> {
+    try {
+      const matrix = await syahriyahService.getSyahriyahMatrix(tahun);
+      const paidSet = new Set<number>();
+      for (const item of matrix) {
+        if (item.records) {
+          for (const rec of item.records) {
+            if (rec.total_dibayar && rec.total_dibayar > 0) {
+              paidSet.add(rec.bulan);
+            }
+          }
+        }
+      }
+      return Array.from(paidSet).sort((a, b) => a - b);
+    } catch {
+      return [];
+    }
+  },
+
+  async validateAndSaveTarif(
+    tarif: TarifDefault,
+    bulan_efektif: number,
+    tahun_efektif: number
+  ): Promise<void> {
+    const paidMonths = await this.getPaidMonths(tahun_efektif);
+    if (paidMonths.includes(bulan_efektif)) {
+      throw new Error(
+        'Gagal! Sudah ada pembayaran di bulan tersebut. Batalkan (Void) pembayaran terlebih dahulu.'
+      );
+    }
+    this.saveTarif(tarif);
+    localStorage.setItem(
+      'al_hidayah_tarif_effective',
+      JSON.stringify({
+        bulan_efektif,
+        tahun_efektif,
+        updated_at: new Date().toISOString(),
+      })
+    );
   },
 
   // MANAJEMEN PENGGUNA
