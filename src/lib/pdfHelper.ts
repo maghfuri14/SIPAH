@@ -40,10 +40,20 @@ export function getKwitansiConfig(): KwitansiConfig {
     const raw = localStorage.getItem('al_hidayah_kwitansi_config');
     if (!raw) return defaultConfig;
     const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return defaultConfig;
     return {
-      ...defaultConfig,
-      ...parsed,
-      nama_penandatangan: parsed.nama_penandatangan || profil.bendahara || "Shofil Mubarok",
+      kop_surat:
+        typeof parsed.kop_surat === 'string' && parsed.kop_surat.trim()
+          ? parsed.kop_surat
+          : defaultConfig.kop_surat,
+      footer_kwitansi:
+        typeof parsed.footer_kwitansi === 'string' && parsed.footer_kwitansi.trim()
+          ? parsed.footer_kwitansi
+          : defaultConfig.footer_kwitansi,
+      nama_penandatangan:
+        typeof parsed.nama_penandatangan === 'string' && parsed.nama_penandatangan.trim()
+          ? parsed.nama_penandatangan
+          : defaultConfig.nama_penandatangan,
     };
   } catch {
     return defaultConfig;

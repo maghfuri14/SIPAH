@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Plus,
@@ -15,18 +15,22 @@ import {
   UserX,
   SearchX,
   AlertTriangle,
+  ShieldCheck,
 } from 'lucide-react';
 import { useSantriList } from './useSantriList';
 import { SantriFormModal } from './SantriFormModal';
 import { ToastContainer, showToast } from '../../components/ui/Toast';
 import { authStore } from '../../store/authStore';
 import { santriService } from '../../lib/santriService';
+import { Santri, StatusSyahriyahSantri } from '../../types/santri';
 
 export const SantriListPage: React.FC = () => {
   const navigate = useNavigate();
   const user = authStore.getUser();
   const isPemilik = user?.role === 'pemilik';
   const isSuperAdmin = user?.role === 'super_admin';
+  const canBulkAction = user?.role === 'super_admin' || user?.role === 'admin';
+  const canEditSyahriyahStatus = canBulkAction;
 
   const {
     isLoading,
@@ -56,6 +60,115 @@ export const SantriListPage: React.FC = () => {
   const [modalOpen, setModalOpen] = useState(false);
   const [selectedSantriId, setSelectedSantriId] = useState<string | null>(null);
   const [deleteConfirmSantri, setDeleteConfirmSantri] = useState<{ id: string; nama: string } | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkConfirmAction, setBulkConfirmAction] = useState<
+    'Aktifkan' | 'Nonaktifkan' | 'Hapus' | null
+  >(null);
+  const [isBulkProcessing, setIsBulkProcessing] = useState(false);
+  const [syahriyahStatusSantri, setSyahriyahStatusSantri] = useState<Santri | null>(null);
+  const [syahriyahStatusValue, setSyahriyahStatusValue] =
+    useState<StatusSyahriyahSantri>('Normal');
+  const [bulkSyahriyahModalOpen, setBulkSyahriyahModalOpen] = useState(false);
+  const [bulkSyahriyahStatus, setBulkSyahriyahStatus] =
+    useState<StatusSyahriyahSantri>('Normal');
+  const selectAllRef = useRef<HTMLInputElement>(null);
+
+  const paginatedIds = paginated.map((santri) => santri.id);
+  const selectedOnPageCount = paginatedIds.filter((id) => selectedIds.has(id)).length;
+  const allOnPageSelected = paginatedIds.length > 0 && selectedOnPageCount === paginatedIds.length;
+
+  useEffect(() => {
+    if (selectAllRef.current) {
+      selectAllRef.current.indeterminate =
+        selectedOnPageCount > 0 && !allOnPageSelected;
+    }
+  }, [selectedOnPageCount, allOnPageSelected]);
+
+  const toggleSelectedSantri = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAllOnPage = () => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (allOnPageSelected) {
+        paginatedIds.forEach((id) => next.delete(id));
+      } else {
+        paginatedIds.forEach((id) => next.add(id));
+      }
+      return next;
+    });
+  };
+
+  const clearSelectedSantri = () => setSelectedIds(new Set());
+
+  const openSyahriyahStatusModal = (santri: Santri) => {
+    setSyahriyahStatusSantri(santri);
+    setSyahriyahStatusValue(santri.status_syahriyah || 'Normal');
+  };
+
+  const handleSaveSyahriyahStatus = async () => {
+    if (!syahriyahStatusSantri) return;
+
+    try {
+      await santriService.updateSantri(syahriyahStatusSantri.id, {
+        status_syahriyah: syahriyahStatusValue,
+      });
+      showToast('Status Syahriyah berhasil diperbarui', 'success');
+      setSyahriyahStatusSantri(null);
+      await refresh();
+    } catch {
+      showToast('Gagal memperbarui status Syahriyah', 'error');
+    }
+  };
+
+  const handleSaveBulkSyahriyahStatus = async () => {
+    try {
+      await santriService.updateSyahriyahStatusBulk(
+        Array.from(selectedIds),
+        bulkSyahriyahStatus
+      );
+      showToast(`Status Syahriyah ${selectedIds.size} santri berhasil diperbarui`, 'success');
+      setBulkSyahriyahModalOpen(false);
+      clearSelectedSantri();
+      await refresh();
+    } catch {
+      showToast('Gagal memperbarui status Syahriyah santri terpilih', 'error');
+    }
+  };
+
+  const handleBulkConfirm = async () => {
+    if (!bulkConfirmAction) return;
+
+    setIsBulkProcessing(true);
+    try {
+      if (bulkConfirmAction === 'Hapus') {
+        await santriService.deleteSantriBulk(Array.from(selectedIds));
+        showToast(`${selectedIds.size} santri berhasil dihapus`, 'success');
+      } else {
+        const status = bulkConfirmAction === 'Aktifkan' ? 'Aktif' : 'Tidak Aktif';
+        await santriService.updateSantriStatus(Array.from(selectedIds), status);
+        showToast(`${selectedIds.size} santri berhasil diperbarui`, 'success');
+      }
+      setBulkConfirmAction(null);
+      clearSelectedSantri();
+      await refresh();
+    } catch {
+      showToast(
+        bulkConfirmAction === 'Hapus'
+          ? 'Gagal menghapus santri terpilih'
+          : 'Gagal memperbarui status santri terpilih',
+        'error'
+      );
+    } finally {
+      setIsBulkProcessing(false);
+    }
+  };
 
   const handleConfirmDelete = async () => {
     if (!deleteConfirmSantri) return;
@@ -190,6 +303,56 @@ export const SantriListPage: React.FC = () => {
 
       {/* Main Table Card */}
       <div className="bg-white border border-[#E2E8F0] rounded-xl shadow-xs overflow-hidden">
+        {canBulkAction && selectedIds.size > 0 && (
+          <div className="sticky top-0 z-20 flex flex-wrap items-center justify-between gap-3 border-b border-emerald-200 bg-emerald-50 px-4 py-3">
+            <span className="text-sm font-semibold text-emerald-900">
+              {selectedIds.size} Santri Terpilih
+            </span>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setBulkConfirmAction('Aktifkan')}
+                className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-700"
+              >
+                Aktifkan
+              </button>
+              <button
+                type="button"
+                onClick={() => setBulkConfirmAction('Nonaktifkan')}
+                className="px-3 py-1.5 rounded-lg bg-slate-600 text-white text-xs font-semibold hover:bg-slate-700"
+              >
+                Nonaktifkan
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setBulkSyahriyahStatus('Normal');
+                  setBulkSyahriyahModalOpen(true);
+                }}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500 text-white text-xs font-semibold hover:bg-amber-600"
+              >
+                <ShieldCheck className="w-3.5 h-3.5" />
+                Ubah Status Syahriyah
+              </button>
+              {isSuperAdmin && (
+                <button
+                  type="button"
+                  onClick={() => setBulkConfirmAction('Hapus')}
+                  className="px-3 py-1.5 rounded-lg bg-red-600 text-white text-xs font-semibold hover:bg-red-700"
+                >
+                  Hapus
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={clearSelectedSantri}
+                className="px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-slate-700 text-xs font-semibold hover:bg-slate-100"
+              >
+                Batal
+              </button>
+            </div>
+          </div>
+        )}
         {/* Error State */}
         {error ? (
           <div className="p-8 text-center space-y-3">
@@ -260,10 +423,13 @@ export const SantriListPage: React.FC = () => {
                 <tr className="bg-slate-50 border-b border-[#E2E8F0] text-xs font-semibold uppercase text-slate-500 select-none">
                   <th scope="col" className="w-10 px-4 py-3 text-center">
                     <input
+                      ref={selectAllRef}
                       type="checkbox"
-                      disabled
+                      disabled={!canBulkAction || paginatedIds.length === 0}
                       aria-label="Pilih semua"
-                      className="rounded border-slate-300 text-[#059669] opacity-50 cursor-not-allowed"
+                      checked={allOnPageSelected}
+                      onChange={toggleSelectAllOnPage}
+                      className="rounded border-slate-300 text-[#059669] disabled:opacity-50"
                     />
                   </th>
                   <th scope="col" className="w-[60px] px-2 py-3 text-center">
@@ -301,9 +467,12 @@ export const SantriListPage: React.FC = () => {
                     <td className="px-4 py-3 text-center" onClick={(e) => e.stopPropagation()}>
                       <input
                         type="checkbox"
-                        disabled
+                        disabled={!canBulkAction}
                         aria-label={`Pilih ${santri.nama}`}
-                        className="rounded border-slate-300 opacity-50 cursor-not-allowed"
+                        checked={selectedIds.has(santri.id)}
+                        onChange={() => toggleSelectedSantri(santri.id)}
+                        onClick={(e) => e.stopPropagation()}
+                        className="rounded border-slate-300 text-[#059669] disabled:opacity-50"
                       />
                     </td>
                     <td className="px-2 py-3 text-center" onClick={(e) => e.stopPropagation()}>
@@ -371,6 +540,29 @@ export const SantriListPage: React.FC = () => {
                             >
                               <Edit className="w-4 h-4" />
                             </button>
+
+                            {canEditSyahriyahStatus && (
+                              <button
+                                onClick={() => openSyahriyahStatusModal(santri)}
+                                title={
+                                  (santri.status_syahriyah || 'Normal') === 'Normal'
+                                    ? 'Normal'
+                                    : (santri.status_syahriyah || 'Normal') === 'Keringanan'
+                                      ? 'Keringanan 50%'
+                                      : 'Bebas Syahriyah'
+                                }
+                                aria-label={`Ubah status Syahriyah ${santri.nama}`}
+                                className={`p-1.5 rounded-lg hover:bg-slate-100 transition-colors ${
+                                  (santri.status_syahriyah || 'Normal') === 'Normal'
+                                    ? 'text-slate-400'
+                                    : (santri.status_syahriyah || 'Normal') === 'Keringanan'
+                                      ? 'text-amber-500'
+                                      : 'text-emerald-600'
+                                }`}
+                              >
+                                <ShieldCheck className="w-4 h-4" />
+                              </button>
+                            )}
 
                             {/* 3. Toggle Status */}
                             <button
@@ -515,6 +707,172 @@ export const SantriListPage: React.FC = () => {
                 className="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-semibold transition-colors shadow-xs"
               >
                 Hapus
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {syahriyahStatusSantri && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="fixed inset-0 bg-black/50 backdrop-blur-xs transition-opacity"
+            onClick={() => setSyahriyahStatusSantri(null)}
+          />
+          <div className="relative w-full max-w-sm bg-white rounded-2xl shadow-2xl p-6 z-10 space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            <h3 className="text-lg font-bold text-[#0F172A]">
+              Status Syahriyah: {syahriyahStatusSantri.nama}
+            </h3>
+
+            <div className="space-y-2">
+              {([
+                ['Normal', 'Normal (Bayar Penuh)'],
+                ['Keringanan', 'Keringanan (50%)'],
+                ['Bebas', 'Bebas Syahriyah (Gratis)'],
+              ] as [StatusSyahriyahSantri, string][]).map(([value, label]) => (
+                <label
+                  key={value}
+                  className={`flex items-center gap-3 p-3 border rounded-xl cursor-pointer transition-colors ${
+                    syahriyahStatusValue === value
+                      ? 'border-[#059669] bg-emerald-50'
+                      : 'border-slate-200 hover:bg-slate-50'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="statusSyahriyah"
+                    value={value}
+                    checked={syahriyahStatusValue === value}
+                    onChange={() => setSyahriyahStatusValue(value)}
+                    className="accent-[#059669]"
+                  />
+                  <span className="text-sm font-medium text-slate-700">{label}</span>
+                </label>
+              ))}
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setSyahriyahStatusSantri(null)}
+                className="px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-100 text-xs font-semibold transition-colors"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveSyahriyahStatus}
+                className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold transition-colors shadow-xs"
+              >
+                Simpan Perubahan
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {bulkSyahriyahModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="fixed inset-0 bg-black/50 backdrop-blur-xs transition-opacity"
+            onClick={() => setBulkSyahriyahModalOpen(false)}
+          />
+          <div className="relative w-full max-w-sm bg-white rounded-2xl shadow-2xl p-6 z-10 space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            <h3 className="text-lg font-bold text-[#0F172A]">
+              Ubah Status Syahriyah untuk {selectedIds.size} Santri
+            </h3>
+
+            <div className="space-y-2">
+              {([
+                ['Normal', 'Normal (Bayar)'],
+                ['Keringanan', 'Keringanan (50%)'],
+                ['Bebas', 'Bebas Syahriyah'],
+              ] as [StatusSyahriyahSantri, string][]).map(([value, label]) => (
+                <label
+                  key={value}
+                  className={`flex items-center gap-3 p-3 border rounded-xl cursor-pointer transition-colors ${
+                    bulkSyahriyahStatus === value
+                      ? 'border-amber-500 bg-amber-50'
+                      : 'border-slate-200 hover:bg-slate-50'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="bulkStatusSyahriyah"
+                    checked={bulkSyahriyahStatus === value}
+                    onChange={() => setBulkSyahriyahStatus(value)}
+                    className="accent-amber-500"
+                  />
+                  <span className="text-sm font-medium text-slate-700">{label}</span>
+                </label>
+              ))}
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setBulkSyahriyahModalOpen(false)}
+                className="px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-100 text-xs font-semibold"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveBulkSyahriyahStatus}
+                className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold"
+              >
+                Simpan Perubahan
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Konfirmasi Bulk Action */}
+      {bulkConfirmAction && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="fixed inset-0 bg-black/50 backdrop-blur-xs transition-opacity"
+            onClick={() => {
+              if (!isBulkProcessing) setBulkConfirmAction(null);
+            }}
+          />
+          <div className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl p-6 z-10 space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center gap-3 text-slate-700">
+              <div
+                className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${
+                  bulkConfirmAction === 'Hapus' ? 'bg-red-100 text-red-600' : 'bg-emerald-100 text-emerald-600'
+                }`}
+              >
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <h3 className="text-lg font-bold text-[#0F172A]">Konfirmasi Aksi Massal</h3>
+            </div>
+
+            <p className="text-sm text-slate-600">
+              Apakah Anda yakin ingin {bulkConfirmAction.toLowerCase()} {selectedIds.size} santri terpilih?
+            </p>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                disabled={isBulkProcessing}
+                onClick={() => setBulkConfirmAction(null)}
+                className="px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-100 text-xs font-semibold transition-colors disabled:opacity-50"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                disabled={isBulkProcessing}
+                onClick={handleBulkConfirm}
+                className={`px-4 py-2 rounded-lg text-white text-xs font-semibold transition-colors shadow-xs disabled:opacity-50 ${
+                  bulkConfirmAction === 'Hapus'
+                    ? 'bg-red-600 hover:bg-red-700'
+                    : 'bg-[#059669] hover:bg-[#047857]'
+                }`}
+              >
+                {isBulkProcessing ? 'Memproses...' : 'Ya, Lanjutkan'}
               </button>
             </div>
           </div>

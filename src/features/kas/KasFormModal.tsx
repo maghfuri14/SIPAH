@@ -13,6 +13,40 @@ interface KasFormModalProps {
   onSuccess: () => void;
 }
 
+interface KategoriKasConfig {
+  pemasukan: string[];
+  pengeluaran: string[];
+}
+
+const STORAGE_KEY_KATEGORI_KAS = 'al_hidayah_kategori_kas';
+
+const toKategoriList = (value: unknown, fallback: string[]): string[] => {
+  if (!Array.isArray(value)) return fallback;
+
+  const categories = value.filter(
+    (item): item is string => typeof item === 'string' && item.trim().length > 0
+  );
+
+  return categories.length > 0 ? categories : fallback;
+};
+
+const getKategoriKas = (): KategoriKasConfig => {
+  try {
+    const rawKategori = localStorage.getItem(STORAGE_KEY_KATEGORI_KAS);
+    const savedKategori = rawKategori ? JSON.parse(rawKategori) : null;
+
+    return {
+      pemasukan: toKategoriList(savedKategori?.pemasukan, KATEGORI_PEMASUKAN),
+      pengeluaran: toKategoriList(savedKategori?.pengeluaran, KATEGORI_PENGELUARAN),
+    };
+  } catch {
+    return {
+      pemasukan: KATEGORI_PEMASUKAN,
+      pengeluaran: KATEGORI_PENGELUARAN,
+    };
+  }
+};
+
 export const KasFormModal: React.FC<KasFormModalProps> = ({
   isOpen,
   onClose,
@@ -32,11 +66,19 @@ export const KasFormModal: React.FC<KasFormModalProps> = ({
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [kategoriKas, setKategoriKas] = useState<KategoriKasConfig>({
+    pemasukan: KATEGORI_PEMASUKAN,
+    pengeluaran: KATEGORI_PENGELUARAN,
+  });
 
-  const kategoriOptions = jenis === 'Pemasukan' ? KATEGORI_PEMASUKAN : KATEGORI_PENGELUARAN;
+  const kategoriOptions = jenis === 'Pemasukan'
+    ? kategoriKas.pemasukan
+    : kategoriKas.pengeluaran;
 
   useEffect(() => {
     if (isOpen) {
+      setKategoriKas(getKategoriKas());
+
       setErrors({});
       if (kasId) {
         kasService.getKasById(kasId).then((data) => {

@@ -109,4 +109,35 @@ export const santriService = {
     const filtered = list.filter((s) => s.id !== id);
     saveSantriList(filtered);
   },
+
+  async updateSantriStatus(ids: string[], status: 'Aktif' | 'Tidak Aktif'): Promise<void> {
+    await delay(300);
+    const list = getStoredSantri();
+    const selectedIds = new Set(ids);
+    const now = new Date().toISOString();
+    const updatedList = list.map((s) =>
+      selectedIds.has(s.id) ? { ...s, status, updated_at: now } : s
+    );
+    saveSantriList(updatedList);
+  },
+
+  async deleteSantriBulk(ids: string[]): Promise<void> {
+    await delay(300);
+    const list = getStoredSantri();
+    const selectedIds = new Set(ids);
+    saveSantriList(list.filter((s) => !selectedIds.has(s.id)));
+  },
+
+  async updateSyahriyahStatusBulk(
+    ids: string[],
+    status: 'Normal' | 'Keringanan' | 'Bebas'
+  ): Promise<void> {
+    await delay(300);
+    const list = getStoredSantri();
+    const selectedIds = new Set(ids);
+    const now = new Date().toISOString();
+    saveSantriList(list.map((s) =>
+      selectedIds.has(s.id) ? { ...s, status_syahriyah: status, updated_at: now } : s
+    ));
+  },
 };

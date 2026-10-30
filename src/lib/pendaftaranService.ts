@@ -126,6 +126,18 @@ export const pendaftaranService = {
     return list[index];
   },
 
+  async updateStatusPendaftaranBulk(
+    ids: string[],
+    status: 'Diterima' | 'Ditolak'
+  ): Promise<void> {
+    await delay(300);
+    const list = getStoredPendaftaran();
+    const selectedIds = new Set(ids);
+    savePendaftaranList(list.map((item) =>
+      selectedIds.has(item.id) ? { ...item, status } : item
+    ));
+  },
+
   async konversiKeSantri(
     id: string,
     nis: string,

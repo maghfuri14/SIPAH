@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   UserPlus,
   Search,
@@ -22,6 +22,7 @@ export const PendaftaranListPage: React.FC = () => {
   const navigate = useNavigate();
   const user = authStore.getUser();
   const isPemilik = user?.role === 'pemilik';
+  const canBulkAction = user?.role === 'super_admin' || user?.role === 'admin';
 
   const [pendaftaranList, setPendaftaranList] = useState<Pendaftaran[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -34,6 +35,10 @@ export const PendaftaranListPage: React.FC = () => {
   const [formModalOpen, setFormModalOpen] = useState(false);
   const [konversiModalOpen, setKonversiModalOpen] = useState(false);
   const [selectedPendaftaran, setSelectedPendaftaran] = useState<Pendaftaran | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkStatusAction, setBulkStatusAction] = useState<'Diterima' | 'Ditolak' | null>(null);
+  const [isBulkProcessing, setIsBulkProcessing] = useState(false);
+  const selectAllRef = useRef<HTMLInputElement>(null);
 
   const loadData = async () => {
     setIsLoading(true);
@@ -81,6 +86,65 @@ export const PendaftaranListPage: React.FC = () => {
     }
     return true;
   });
+
+  const filteredIds = filteredList.map((item) => item.id);
+  const selectedOnListCount = filteredIds.filter((id) => selectedIds.has(id)).length;
+  const allFilteredSelected =
+    filteredIds.length > 0 && selectedOnListCount === filteredIds.length;
+
+  useEffect(() => {
+    if (selectAllRef.current) {
+      selectAllRef.current.indeterminate =
+        selectedOnListCount > 0 && !allFilteredSelected;
+    }
+  }, [selectedOnListCount, allFilteredSelected]);
+
+  const toggleSelectedPendaftaran = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      filteredIds.forEach((id) => {
+        if (allFilteredSelected) next.delete(id);
+        else next.add(id);
+      });
+      return next;
+    });
+  };
+
+  const clearSelectedPendaftaran = () => setSelectedIds(new Set());
+
+  const handleBulkStatus = async () => {
+    if (!bulkStatusAction) return;
+
+    setIsBulkProcessing(true);
+    try {
+      await pendaftaranService.updateStatusPendaftaranBulk(
+        Array.from(selectedIds),
+        bulkStatusAction
+      );
+      showToast(
+        `${selectedIds.size} pendaftar berhasil ${
+          bulkStatusAction === 'Diterima' ? 'diterima' : 'ditolak'
+        }`,
+        'success'
+      );
+      setBulkStatusAction(null);
+      clearSelectedPendaftaran();
+      await loadData();
+    } catch {
+      showToast('Gagal memperbarui status pendaftar terpilih', 'error');
+    } finally {
+      setIsBulkProcessing(false);
+    }
+  };
 
   const formatDateStr = (dateStr: string) => {
     if (!dateStr) return '-';
@@ -168,6 +232,38 @@ export const PendaftaranListPage: React.FC = () => {
 
       {/* Main Table Card */}
       <div className="bg-white border border-[#E2E8F0] rounded-xl shadow-xs overflow-hidden">
+        {canBulkAction && selectedIds.size > 0 && (
+          <div className="sticky top-0 z-20 flex flex-wrap items-center justify-between gap-3 border-b border-emerald-200 bg-emerald-50 px-4 py-3">
+            <span className="text-sm font-semibold text-emerald-900">
+              {selectedIds.size} Pendaftar Terpilih
+            </span>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setBulkStatusAction('Diterima')}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-700"
+              >
+                <CheckCircle className="w-3.5 h-3.5" />
+                Terima
+              </button>
+              <button
+                type="button"
+                onClick={() => setBulkStatusAction('Ditolak')}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-600 text-white text-xs font-semibold hover:bg-red-700"
+              >
+                <XCircle className="w-3.5 h-3.5" />
+                Tolak
+              </button>
+              <button
+                type="button"
+                onClick={clearSelectedPendaftaran}
+                className="px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-slate-700 text-xs font-semibold hover:bg-slate-100"
+              >
+                Batal
+              </button>
+            </div>
+          </div>
+        )}
         {isLoading ? (
           <div className="p-4 space-y-3">
             {[1, 2, 3, 4].map((i) => (
@@ -221,6 +317,17 @@ export const PendaftaranListPage: React.FC = () => {
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-slate-50 border-b border-[#E2E8F0] text-xs font-semibold uppercase text-slate-500 select-none">
+                  <th scope="col" className="w-10 px-4 py-3 text-center">
+                    <input
+                      ref={selectAllRef}
+                      type="checkbox"
+                      disabled={!canBulkAction || filteredIds.length === 0}
+                      aria-label="Pilih semua pendaftar"
+                      checked={allFilteredSelected}
+                      onChange={toggleSelectAll}
+                      className="rounded border-slate-300 text-[#059669] disabled:opacity-50"
+                    />
+                  </th>
                   <th scope="col" className="px-4 py-3">Tgl Daftar</th>
                   <th scope="col" className="px-4 py-3">Nama Calon</th>
                   <th scope="col" className="px-4 py-3">Nama Wali</th>
@@ -232,6 +339,19 @@ export const PendaftaranListPage: React.FC = () => {
               <tbody className="divide-y divide-slate-100 text-sm">
                 {filteredList.map((item) => (
                   <tr key={item.id} className="hover:bg-slate-50/70 transition-colors">
+                    <td
+                      className="px-4 py-3 text-center"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <input
+                        type="checkbox"
+                        disabled={!canBulkAction}
+                        aria-label={`Pilih ${item.nama_calon}`}
+                        checked={selectedIds.has(item.id)}
+                        onChange={() => toggleSelectedPendaftaran(item.id)}
+                        className="rounded border-slate-300 text-[#059669] disabled:opacity-50"
+                      />
+                    </td>
                     <td className="px-4 py-3 text-xs font-medium text-slate-600 whitespace-nowrap">
                       {formatDateStr(item.tanggal_pendaftaran)}
                     </td>
@@ -365,6 +485,62 @@ export const PendaftaranListPage: React.FC = () => {
         onClose={() => setKonversiModalOpen(false)}
         onSuccess={loadData}
       />
+
+      {bulkStatusAction && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="fixed inset-0 bg-black/50 backdrop-blur-xs transition-opacity"
+            onClick={() => {
+              if (!isBulkProcessing) setBulkStatusAction(null);
+            }}
+          />
+          <div className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl p-6 z-10 space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center gap-3">
+              <div
+                className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${
+                  bulkStatusAction === 'Ditolak'
+                    ? 'bg-red-100 text-red-600'
+                    : 'bg-emerald-100 text-emerald-600'
+                }`}
+              >
+                {bulkStatusAction === 'Ditolak' ? (
+                  <XCircle className="w-5 h-5" />
+                ) : (
+                  <CheckCircle className="w-5 h-5" />
+                )}
+              </div>
+              <h3 className="text-lg font-bold text-[#0F172A]">Konfirmasi Aksi Massal</h3>
+            </div>
+
+            <p className="text-sm text-slate-600">
+              Yakin ingin {bulkStatusAction === 'Diterima' ? 'Menerima' : 'Menolak'} {selectedIds.size} pendaftar terpilih?
+            </p>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                disabled={isBulkProcessing}
+                onClick={() => setBulkStatusAction(null)}
+                className="px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-100 text-xs font-semibold disabled:opacity-50"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                disabled={isBulkProcessing}
+                onClick={handleBulkStatus}
+                className={`px-4 py-2 rounded-lg text-white text-xs font-semibold disabled:opacity-50 ${
+                  bulkStatusAction === 'Ditolak'
+                    ? 'bg-red-600 hover:bg-red-700'
+                    : 'bg-emerald-600 hover:bg-emerald-700'
+                }`}
+              >
+                {isBulkProcessing ? 'Memproses...' : 'Ya, Lanjutkan'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

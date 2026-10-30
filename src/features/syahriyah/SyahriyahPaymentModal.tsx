@@ -3,8 +3,6 @@ import {
   X,
   Search,
   CheckCircle2,
-  Plus,
-  Trash2,
   ChevronLeft,
   ChevronRight,
   Calendar,
@@ -208,60 +206,47 @@ export const SyahriyahPaymentModal: React.FC<SyahriyahPaymentModalProps> = ({
 
   // Additional fees helpers
   const getStoredIuranOptions = () => {
+    const defaults = [
+      { id: 'iur-1', nama: 'Seragam', tipe: 'Keduanya', nominal: 50000 },
+      { id: 'iur-2', nama: 'Kitab', tipe: 'Syahriyah', nominal: 35000 },
+    ];
     try {
       const raw = localStorage.getItem('al_hidayah_iuran_tambahan');
-      if (!raw) {
-        return [
-          { id: 'iur-1', nama: 'Seragam', tipe: 'Keduanya', nominal: 50000 },
-          { id: 'iur-2', nama: 'Kitab', tipe: 'Syahriyah', nominal: 35000 },
-        ];
-      }
-      const list: any[] = JSON.parse(raw);
-      return list.filter((item) => item.tipe === 'Syahriyah' || item.tipe === 'Keduanya' || !item.tipe);
+      const list = raw ? JSON.parse(raw) : null;
+      if (!Array.isArray(list)) return defaults;
+      const options = list.filter((item) =>
+        item &&
+        typeof item.nama === 'string' &&
+        item.nama.trim() &&
+        (item.tipe === 'Syahriyah' || item.tipe === 'Keduanya' || !item.tipe)
+      );
+      return options.length > 0 ? options : defaults;
     } catch {
-      return [
-        { id: 'iur-1', nama: 'Seragam', tipe: 'Keduanya', nominal: 50000 },
-        { id: 'iur-2', nama: 'Kitab', tipe: 'Syahriyah', nominal: 35000 },
-      ];
+      return defaults;
     }
   };
 
-  const handleAddIuranLain = () => {
-    const options = getStoredIuranOptions();
-    const first = options[0] || { nama: '', nominal: 0 };
-    setIuranTambahan((prev) => [
-      ...prev,
-      { id: 'i_' + Date.now(), nama: first.nama, nominal: first.nominal },
-    ]);
-  };
-
-  const handleSelectIuranPreset = (id: string, selectedNama: string) => {
-    const options = getStoredIuranOptions();
-    const found = options.find((o) => o.nama === selectedNama);
-    const nominal = found ? found.nominal : 0;
-    setIuranTambahan((prev) =>
-      prev.map((item) =>
-        item.id === id ? { ...item, nama: selectedNama, nominal } : item
-      )
-    );
-  };
-
-  const handleRemoveIuranLain = (id: string) => {
-    setIuranTambahan((prev) => prev.filter((i) => i.id !== id));
+  const handleToggleIuran = (option: any, checked: boolean) => {
+    const key = option.id || option.nama;
+    setIuranTambahan((prev) => {
+      if (!checked) return prev.filter((item) => item.id !== key);
+      if (prev.some((item) => item.id === key)) return prev;
+      return [...prev, {
+        id: key,
+        nama: option.nama.trim(),
+        nominal: Number(option.nominal) || 0,
+      }];
+    });
   };
 
   const handleIuranLainChange = (
     id: string,
-    field: 'nama' | 'nominal',
     value: string
   ) => {
     setIuranTambahan((prev) =>
       prev.map((item) => {
         if (item.id === id) {
-          if (field === 'nominal') {
-            return { ...item, nominal: parseThousand(value) };
-          }
-          return { ...item, [field]: value };
+          return { ...item, nominal: parseThousand(value) };
         }
         return item;
       })
@@ -702,48 +687,34 @@ export const SyahriyahPaymentModal: React.FC<SyahriyahPaymentModalProps> = ({
                       <label className="block text-xs font-bold text-slate-700">
                         Iuran Tambahan / Lainnya (Opsional)
                       </label>
-                      <button
-                        type="button"
-                        onClick={handleAddIuranLain}
-                        className="inline-flex items-center gap-1 text-xs font-semibold text-[#059669] hover:underline"
-                      >
-                        <Plus className="w-3.5 h-3.5" />
-                        <span>+ Tambah Iuran Lain</span>
-                      </button>
                     </div>
 
-                    {iuranTambahan.map((item) => (
-                      <div key={item.id} className="flex items-center gap-2">
-                        <select
-                          value={item.nama}
-                          onChange={(e) => handleSelectIuranPreset(item.id, e.target.value)}
-                          className="flex-1 px-3 py-1.5 text-xs border border-slate-300 rounded-lg outline-none focus:border-[#059669] bg-white text-slate-800"
-                        >
-                          <option value="" disabled>-- Pilih Iuran Tambahan --</option>
-                          {getStoredIuranOptions().map((opt) => (
-                            <option key={opt.id || opt.nama} value={opt.nama}>
-                              {opt.nama} (Rp {opt.nominal.toLocaleString('id-ID')})
-                            </option>
-                          ))}
-                        </select>
-                        <div className="w-32 relative">
+                    {getStoredIuranOptions().map((option) => {
+                      const key = option.id || option.nama;
+                      const selected = iuranTambahan.find((item) => item.id === key);
+                      return (
+                        <label key={key} className="flex items-center gap-2 p-2 border border-slate-200 rounded-lg">
                           <input
-                            type="text"
-                            placeholder="Nominal"
-                            value={formatThousand(item.nominal)}
-                            onChange={(e) => handleIuranLainChange(item.id, 'nominal', e.target.value)}
-                            className="w-full px-2.5 py-1.5 text-xs border border-slate-300 rounded-lg outline-none font-semibold text-right focus:border-[#059669]"
+                            type="checkbox"
+                            checked={Boolean(selected)}
+                            onChange={(e) => handleToggleIuran(option, e.target.checked)}
+                            className="accent-[#059669]"
                           />
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveIuranLain(item.id)}
-                          className="p-1.5 text-slate-400 hover:text-red-600 transition-colors"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    ))}
+                          <span className="flex-1 text-xs font-medium text-slate-700">
+                            {option.nama} - Rp {Number(option.nominal || 0).toLocaleString('id-ID')}
+                          </span>
+                          {selected && (
+                            <input
+                              type="text"
+                              aria-label={`Nominal ${option.nama}`}
+                              value={formatThousand(selected.nominal)}
+                              onChange={(e) => handleIuranLainChange(key, e.target.value)}
+                              className="w-32 px-2.5 py-1.5 text-xs border border-slate-300 rounded-lg outline-none font-semibold text-right focus:border-[#059669]"
+                            />
+                          )}
+                        </label>
+                      );
+                    })}
                   </div>
 
                   {/* Section 5: Detail Pembayaran */}
