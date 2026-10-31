@@ -9,6 +9,7 @@ import {
   Download,
   Printer,
   CalendarDays,
+  Copy,
 } from 'lucide-react';
 import { Santri } from '../../types/santri';
 import {
@@ -85,7 +86,7 @@ export const KilatanPaymentModal: React.FC<KilatanPaymentModalProps> = ({
       if (!cancelled && santriApi) {
         setSelectedSantri((current) => current ? {
           ...current,
-          status_syahriyah: santriApi.status_syahriyah || 'Normal',
+          status_kilatan: santriApi.status_kilatan || 'Normal',
         } : current);
       }
       if (!cancelled) setTarifConfig(tarifResponse.data.data || {});
@@ -110,6 +111,7 @@ export const KilatanPaymentModal: React.FC<KilatanPaymentModalProps> = ({
 
   // Post-submit success view state
   const [isSuccess, setIsSuccess] = useState(false);
+  const [previewMode, setPreviewMode] = useState<'a4' | 'thermal' | null>(null);
   const [savedRecord, setSavedRecord] = useState<KilatanTransaksiRecord | null>(null);
 
   // Load all santri for picker
@@ -153,7 +155,7 @@ export const KilatanPaymentModal: React.FC<KilatanPaymentModalProps> = ({
           ) {
             const targetRec = row.records.find((r) => r.event === eventAktif);
             if (targetRec && targetRec.status !== 'Lunas') {
-              const status = selectedSantri.status_syahriyah || 'Normal';
+              const status = selectedSantri.status_kilatan || 'Normal';
               const tarifEfektif = status === 'Bebas'
                 ? 0
                 : status === 'Keringanan'
@@ -182,7 +184,8 @@ export const KilatanPaymentModal: React.FC<KilatanPaymentModalProps> = ({
     if (!selectedSantri) return;
     if (isBeforeMasuk) return;
     const rec = currentYearRecords.find((r) => r.event === event);
-    if (!rec || rec.status === 'Lunas') return;
+    if (rec?.status === 'Lunas') return;
+    if (rec?.status_tarif === 'Bebas') return;
 
     const key = `${selectedYear}-${event}`;
     if (itemInputs[key]) {
@@ -194,13 +197,13 @@ export const KilatanPaymentModal: React.FC<KilatanPaymentModalProps> = ({
       });
     } else {
       // Add selection
-      const status = selectedSantri.status_syahriyah || 'Normal';
+      const status = rec?.status_tarif || selectedSantri.status_kilatan || 'Normal';
       const nominalEfektif = status === 'Bebas'
         ? 0
         : status === 'Keringanan'
           ? Math.floor(Number(tarifConfig.event_kilatan || 0) / 2)
           : Number(tarifConfig.event_kilatan || 0);
-      const sisa = nominalEfektif - rec.total_dibayar;
+      const sisa = rec ? Math.max(0, nominalEfektif - rec.total_dibayar) : nominalEfektif;
       setItemInputs((prev) => ({
         ...prev,
         [key]: {
@@ -373,20 +376,48 @@ export const KilatanPaymentModal: React.FC<KilatanPaymentModalProps> = ({
     printKwitansiThermal(savedRecord, selectedSantri);
   };
 
+  const copyWhatsAppText = async () => {
+    if (!savedRecord || !selectedSantri) return;
+    const profil = JSON.parse(localStorage.getItem('al_hidayah_profil_pondok') || '{}');
+    const rincian = savedRecord.items.map((item) =>
+      `- Kilatan ${item.event} ${item.tahun}: ${formatRupiah(item.nominal)}`
+    ).join('\n');
+    const text = `${profil.nama_pondok || 'Pondok Al Hidayah'}\nNo. Kwitansi: ${savedRecord.id}\nTanggal: ${tanggalBayar}\nNama Santri: ${selectedSantri.nama}\n\nRincian:\n${rincian}\n\nTotal: ${formatRupiah(savedRecord.total_pembayaran)}`;
+    try {
+      await navigator.clipboard.writeText(text);
+      showToast('Teks WhatsApp berhasil disalin', 'success');
+    } catch {
+      showToast('Gagal menyalin teks WhatsApp', 'error');
+    }
+  };
+
+  const previewReceiptHtml = previewMode === 'thermal'
+    ? `<div style="width:80mm;margin:auto;font-family:'Courier New',monospace;font-size:12px;padding:8px;background:white"><div style="text-align:center;font-weight:bold">PONDOK AL HIDAYAH<br/>KWITANSI KILATAN</div><hr/><div>No: ${savedRecord?.id}</div><div>Tgl: ${tanggalBayar}</div><div>Santri: ${selectedSantri?.nama}</div><hr/>${savedRecord?.items.map(item => `<div>${item.event} ${item.tahun}<span style="float:right">${formatRupiah(item.nominal)}</span></div>`).join('') || ''}<hr/><b>Total: ${formatRupiah(savedRecord?.total_pembayaran || 0)}</b><div style="text-align:center;margin-top:12px">Terima kasih<br/>Bendahara</div></div>`
+    : `<div style="max-width:170mm;margin:20px auto;padding:24px;background:white;font-family:Arial,sans-serif"><h2 style="text-align:center">KWITANSI PEMBAYARAN KILATAN</h2><p>No: <b>${savedRecord?.id}</b></p><p>Santri: <b>${selectedSantri?.nama}</b></p><table style="width:100%;border-collapse:collapse">${savedRecord?.items.map(item => `<tr><td style="border-bottom:1px solid #ddd;padding:8px">Kilatan ${item.event} ${item.tahun}</td><td style="border-bottom:1px solid #ddd;padding:8px;text-align:right">${formatRupiah(item.nominal)}</td></tr>`).join('') || ''}</table><p style="text-align:right;font-weight:bold">Total: ${formatRupiah(savedRecord?.total_pembayaran || 0)}</p></div>`;
+
   if (!isOpen) return null;
 
-  const statusTarif = selectedSantri?.status_syahriyah || 'Normal';
+  const selectedEventKey = Object.keys(itemInputs).find((key) => key.startsWith(`${selectedYear}-`));
+  const selectedEventFromKey = selectedEventKey ? selectedEventKey.slice(selectedEventKey.indexOf('-') + 1) : null;
+  const selectedEventRecord = currentYearRecords.find((record) =>
+    selectedEventFromKey ? record.event === selectedEventFromKey
+      : selectedYear === tahunAktif && eventAktif ? record.event === eventAktif : false,
+  ) || currentYearRecords.find((record) => Boolean(itemInputs[`${selectedYear}-${record.event}`]))
+    || currentYearRecords[0];
+  const statusTarif = selectedEventRecord?.status_tarif || selectedSantri?.status_kilatan || 'Normal';
   const tarifEventDasar = Number(tarifConfig.event_kilatan || 0);
-  const tarifKilatan = statusTarif === 'Bebas'
-    ? 0
-    : statusTarif === 'Keringanan' ? Math.floor(tarifEventDasar / 2) : tarifEventDasar;
+  const tarifKilatan = selectedEventRecord
+    ? Number(selectedEventRecord.nominal_tagihan)
+    : statusTarif === 'Bebas'
+      ? 0
+      : statusTarif === 'Keringanan' ? Math.floor(tarifEventDasar / 2) : tarifEventDasar;
   const tarifBadgeClass = statusTarif === 'Bebas'
     ? 'border-emerald-200 bg-emerald-100 text-emerald-800'
     : statusTarif === 'Keringanan'
       ? 'border-amber-200 bg-amber-100 text-amber-800'
       : 'border-slate-200 bg-slate-100 text-slate-700';
   const tarifBadgeText = statusTarif === 'Bebas'
-    ? 'Bebas Syahriyah (Gratis)'
+    ? 'Bebas (Gratis)'
     : statusTarif === 'Keringanan' ? 'Keringanan (50%)' : 'Tarif Normal (100%)';
 
   return (
@@ -453,7 +484,7 @@ export const KilatanPaymentModal: React.FC<KilatanPaymentModalProps> = ({
 
               <button
                 type="button"
-                onClick={handlePrint}
+                onClick={() => setPreviewMode('a4')}
                 className="bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-semibold text-xs py-2.5 px-2 rounded-xl flex flex-col items-center justify-center gap-1 transition-colors shadow-xs cursor-pointer"
               >
                 <Printer className="w-4 h-4" />
@@ -462,11 +493,19 @@ export const KilatanPaymentModal: React.FC<KilatanPaymentModalProps> = ({
 
               <button
                 type="button"
-                onClick={handlePrintThermal}
+                onClick={() => setPreviewMode('thermal')}
                 className="bg-slate-800 hover:bg-slate-900 text-white font-semibold text-xs py-2.5 px-2 rounded-xl flex flex-col items-center justify-center gap-1 transition-colors shadow-xs cursor-pointer"
               >
                 <Printer className="w-4 h-4" />
                 <span>Cetak Thermal</span>
+              </button>
+              <button
+                type="button"
+                onClick={copyWhatsAppText}
+                className="col-span-3 bg-slate-100 border border-slate-200 hover:bg-slate-200 text-slate-700 font-semibold text-xs py-2.5 px-2 rounded-xl flex items-center justify-center gap-2"
+              >
+                <Copy className="w-4 h-4" />
+                <span>Salin Teks WA</span>
               </button>
             </div>
 
@@ -547,6 +586,19 @@ export const KilatanPaymentModal: React.FC<KilatanPaymentModalProps> = ({
                             </span>
                           </button>
                         ))
+                      )}
+                      {previewMode && (
+                        <div className="absolute inset-0 z-30 flex flex-col bg-white">
+                          <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+                            <h3 className="text-sm font-bold text-slate-800">Preview {previewMode === 'thermal' ? 'Thermal' : 'A4'}</h3>
+                            <button type="button" onClick={() => setPreviewMode(null)} className="text-slate-500 hover:text-slate-800"><X className="h-5 w-5" /></button>
+                          </div>
+                          <iframe title="Preview kwitansi" srcDoc={previewReceiptHtml} className="flex-1 bg-slate-100" />
+                          <div className="flex justify-end gap-2 border-t border-slate-200 bg-slate-50 p-4">
+                            <button type="button" onClick={() => setPreviewMode(null)} className="rounded-lg border border-slate-300 px-4 py-2 text-sm">Kembali</button>
+                            <button type="button" onClick={previewMode === 'thermal' ? handlePrintThermal : handlePrint} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white">Cetak Sekarang</button>
+                          </div>
+                        </div>
                       )}
                     </div>
                   )}
@@ -634,10 +686,8 @@ export const KilatanPaymentModal: React.FC<KilatanPaymentModalProps> = ({
                       {KILATAN_EVENTS.map((eventName) => {
                         const rec = currentYearRecords.find((r) => r.event === eventName);
                         const isBeforeMasuk = isKilatanBeforeTanggalMasuk(selectedSantri?.tanggal_masuk, selectedYear, eventName);
-                        const latestAllowed = new Date();
-                        latestAllowed.setFullYear(latestAllowed.getFullYear() + 1);
-                        const isBeyondLimit = selectedYear > latestAllowed.getFullYear();
-                        const isLunas = rec?.status === 'Lunas' || isBeforeMasuk || statusTarif === 'Bebas' || isBeyondLimit;
+                        const isLunas = rec?.status === 'Lunas' || isBeforeMasuk
+                          || rec?.status_tarif === 'Bebas';
 
                         const itemKey = `${selectedYear}-${eventName}`;
                         const isSelected = Boolean(itemInputs[itemKey]);
@@ -868,6 +918,11 @@ export const KilatanPaymentModal: React.FC<KilatanPaymentModalProps> = ({
                 >
                   Batal
                 </button>
+                {statusTarif === 'Bebas' ? (
+                  <span className="rounded-lg bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700">
+                    Santri ini dibebaskan.
+                  </span>
+                ) : (
                 <button
                   type="submit"
                   form="kilatanPaymentForm"
@@ -884,6 +939,7 @@ export const KilatanPaymentModal: React.FC<KilatanPaymentModalProps> = ({
                   <CheckCircle2 className="h-4 w-4" />
                   {isSubmitting ? 'Memproses...' : 'Simpan Pembayaran'}
                 </button>
+                )}
               </div>
             </div>
           </>

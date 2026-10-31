@@ -7,6 +7,7 @@ export interface SyahriyahWaiver {
   bulan_mulai: number;
   bulan_selesai: number;
   jenis: 'Bebas' | 'Keringanan';
+  tipe: 'Syahriyah' | 'Kilatan';
   keterangan?: string;
   created_at: string;
 }
@@ -34,5 +35,12 @@ export const waiverService = {
 
   async deleteWaiver(id: string): Promise<void> {
     await api.delete(`/santri/keringanan/${id}`);
+  },
+
+  async addWaiverBulk(
+    ids: string[],
+    waiver: Omit<SyahriyahWaiver, 'id' | 'santri_id' | 'created_at'>,
+  ): Promise<void> {
+    await api.post('/santri/keringanan/bulk', { ids, ...waiver });
   },
 };

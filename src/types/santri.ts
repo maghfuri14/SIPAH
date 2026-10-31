@@ -1,6 +1,7 @@
 export type KategoriSantri = 'Mukim' | 'Nduduk' | 'Kilatan';
 export type StatusSantri = 'Aktif' | 'Tidak Aktif';
 export type StatusSyahriyahSantri = 'Normal' | 'Bebas' | 'Keringanan';
+export type StatusKilatanSantri = 'Normal' | 'Bebas' | 'Keringanan';
 
 export interface Santri {
   id: string;
@@ -12,6 +13,8 @@ export interface Santri {
   kategori: KategoriSantri;
   status: StatusSantri;
   status_syahriyah?: StatusSyahriyahSantri;
+  status_kilatan?: StatusKilatanSantri;
+  version?: number;
   tanggal_masuk: string;  // ISO date 'YYYY-MM-DD'
   foto?: string;          // URL atau base64
   catatan?: string;

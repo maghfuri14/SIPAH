@@ -6,6 +6,7 @@ export interface SyahriyahBulan {
   nominal_tagihan: number;
   total_dibayar: number;
   status: StatusSyahriyah;
+  status_tarif?: 'Normal' | 'Keringanan' | 'Bebas';
 }
 
 export interface SyahriyahItemInput {

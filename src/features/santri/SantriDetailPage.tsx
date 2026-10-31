@@ -62,6 +62,7 @@ export const SantriDetailPage: React.FC = () => {
   const [waiverBulanMulai, setWaiverBulanMulai] = useState<number>(0);
   const [waiverBulanSelesai, setWaiverBulanSelesai] = useState<number>(0);
   const [waiverJenis, setWaiverJenis] = useState<'Bebas' | 'Keringanan'>('Bebas');
+  const [waiverTipe, setWaiverTipe] = useState<'Syahriyah' | 'Kilatan'>('Syahriyah');
   const [waiverKeterangan, setWaiverKeterangan] = useState('');
   const [waiverDeleteId, setWaiverDeleteId] = useState<string | null>(null);
   const [paidMonths, setPaidMonths] = useState<number[]>([]);
@@ -148,6 +149,7 @@ export const SantriDetailPage: React.FC = () => {
       bulan_mulai: Number(waiverBulanMulai),
       bulan_selesai: Number(waiverBulanSelesai),
       jenis: waiverJenis,
+      tipe: waiverTipe,
       keterangan: waiverKeterangan.trim() || undefined,
       });
       setWaivers(await waiverService.getWaiversForSantri(id));
@@ -548,10 +550,10 @@ export const SantriDetailPage: React.FC = () => {
 
       {/* Modal Add Waiver (Admin Only) */}
       {waiverModalOpen && isAdmin && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
           <div className="fixed inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setWaiverModalOpen(false)} />
-          <div className="relative z-10 w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl">
-            <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+          <div className="relative z-10 flex max-h-[90vh] w-full max-w-lg flex-col rounded-2xl bg-white shadow-xl">
+            <div className="flex flex-shrink-0 items-center justify-between border-b border-slate-200 px-6 py-4">
               <div className="flex items-center gap-3">
                 <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
                   <Calendar className="h-5 w-5" />
@@ -570,7 +572,11 @@ export const SantriDetailPage: React.FC = () => {
               </button>
             </div>
 
-            <form id="waiverForm" onSubmit={handleAddWaiver} className="space-y-4 p-6 text-sm">
+            <form id="waiverForm" onSubmit={handleAddWaiver} className="flex min-h-0 flex-1 flex-col">
+              <div className="flex-1 overflow-y-auto p-6 text-sm space-y-4">
+              <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-slate-600">
+                Pembebasan sementara. Status ini akan menimpa Status Permanen di profil santri untuk bulan-bulan yang dipilih.
+              </p>
               <div>
                 <label className="mb-1 block text-sm font-medium text-slate-900">Tahun <span className="text-red-500">*</span></label>
                 <div className="relative">
@@ -618,6 +624,18 @@ export const SantriDetailPage: React.FC = () => {
               </div>
 
               <div>
+                <label className="mb-1 block text-sm font-medium text-slate-900">Jenis Modul <span className="text-red-500">*</span></label>
+                <select
+                  value={waiverTipe}
+                  onChange={(e) => setWaiverTipe(e.target.value as 'Syahriyah' | 'Kilatan')}
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2.5 outline-none focus:ring-2 focus:ring-emerald-500"
+                >
+                  <option value="Syahriyah">Untuk Syahriyah</option>
+                  <option value="Kilatan">Untuk Kilatan</option>
+                </select>
+              </div>
+
+              <div>
                 <label className="mb-1 block text-sm font-medium text-slate-900">Jenis Keringanan <span className="text-red-500">*</span></label>
                 <select
                   value={waiverJenis}
@@ -639,8 +657,9 @@ export const SantriDetailPage: React.FC = () => {
                   className="w-full rounded-lg border border-slate-200 px-3 py-2.5 outline-none focus:ring-2 focus:ring-emerald-500"
                 />
               </div>
+              </div>
             </form>
-            <div className="flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
+            <div className="flex flex-shrink-0 justify-end gap-2 border-t border-slate-200 bg-slate-50 p-4 rounded-b-2xl">
               <button type="button" onClick={() => setWaiverModalOpen(false)} className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-100">
                 Batal
               </button>

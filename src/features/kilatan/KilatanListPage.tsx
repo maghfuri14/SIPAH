@@ -6,6 +6,7 @@ import {
   Check,
   Clock,
   SearchX,
+  Calendar,
 } from 'lucide-react';
 import { KilatanEvent, EventKilatan } from '../../types/kilatan';
 import { Santri } from '../../types/santri';
@@ -13,6 +14,7 @@ import { kilatanService, KILATAN_EVENTS } from '../../lib/kilatanService';
 import { formatRupiah, isKilatanBeforeTanggalMasuk } from '../../lib/formatter';
 import { ToastContainer, showToast } from '../../components/ui/Toast';
 import { KilatanPaymentModal } from './KilatanPaymentModal';
+import { waiverService } from '../../lib/waiverService';
 
 interface MatrixRow {
   santri: Santri;
@@ -35,6 +37,13 @@ export const KilatanListPage: React.FC = () => {
 
   const [matrixData, setMatrixData] = useState<MatrixRow[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkModalOpen, setBulkModalOpen] = useState(false);
+  const [bulkJenis, setBulkJenis] = useState<'Bebas' | 'Keringanan'>('Keringanan');
+  const [bulkBulanMulai, setBulkBulanMulai] = useState(1);
+  const [bulkBulanSelesai, setBulkBulanSelesai] = useState(12);
+  const [bulkKeterangan, setBulkKeterangan] = useState('');
+  const [isBulkSaving, setIsBulkSaving] = useState(false);
 
   const loadMatrix = async () => {
     setIsLoading(true);
@@ -87,7 +96,7 @@ export const KilatanListPage: React.FC = () => {
 
   const handleCellClick = (santri: Santri, record: KilatanEvent) => {
     const isBeforeMasuk = isKilatanBeforeTanggalMasuk(santri.tanggal_masuk, tahun, record.event);
-    if (isBeforeMasuk) return;
+    if (isBeforeMasuk || santri.status_kilatan === 'Bebas') return;
     setActiveSantri(santri);
     setActiveEvent(record.event);
     setPaymentModalOpen(true);
@@ -97,6 +106,37 @@ export const KilatanListPage: React.FC = () => {
     setActiveSantri(null);
     setActiveEvent(null);
     setPaymentModalOpen(true);
+  };
+
+  const toggleSelected = (id: string) => {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
+  const saveBulkWaiver = async () => {
+    if (!selectedIds.size || bulkBulanMulai > bulkBulanSelesai) return;
+    setIsBulkSaving(true);
+    try {
+      await waiverService.addWaiverBulk(Array.from(selectedIds), {
+        tahun,
+        bulan_mulai: bulkBulanMulai,
+        bulan_selesai: bulkBulanSelesai,
+        jenis: bulkJenis,
+        tipe: 'Kilatan',
+        keterangan: bulkKeterangan.trim() || undefined,
+      });
+      showToast(`Keringanan massal berhasil dibuat untuk ${selectedIds.size} santri`, 'success');
+      setBulkModalOpen(false);
+      setSelectedIds(new Set());
+      await loadMatrix();
+    } catch (error: any) {
+      showToast(error?.message || 'Gagal membuat keringanan massal', 'error');
+    } finally {
+      setIsBulkSaving(false);
+    }
   };
 
   return (
@@ -185,6 +225,19 @@ export const KilatanListPage: React.FC = () => {
         )}
       </div>
 
+      {selectedIds.size > 0 && (
+        <div className="sticky top-2 z-30 flex items-center justify-between rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 shadow-lg">
+          <span className="text-sm font-semibold text-emerald-900">{selectedIds.size} santri terpilih</span>
+          <div className="flex gap-2">
+            <button type="button" onClick={() => setSelectedIds(new Set())} className="px-3 py-1.5 text-xs font-semibold text-slate-600">Batal</button>
+            <button type="button" onClick={() => setBulkModalOpen(true)} className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white">
+              <Calendar className="h-3.5 w-3.5" />
+              Beri Keringanan Massal
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Matriks Table Card */}
       <div className="bg-white border border-[#E2E8F0] rounded-xl shadow-xs overflow-hidden">
         {isLoading ? (
@@ -228,7 +281,17 @@ export const KilatanListPage: React.FC = () => {
                     scope="col"
                     className="sticky top-0 left-0 z-30 bg-slate-100 px-3 py-3 border-r border-b border-[#E2E8F0] min-w-[210px] shadow-xs"
                   >
-                    Santri / Event
+                    <div className="flex items-center gap-2">
+                      <input type="checkbox" aria-label="Pilih semua santri pada halaman"
+                        checked={paginatedMatrix.length > 0 && paginatedMatrix.every(({ santri }) => selectedIds.has(santri.id))}
+                        onChange={(event) => setSelectedIds((current) => {
+                          const next = new Set(current);
+                          paginatedMatrix.forEach(({ santri }) => event.target.checked ? next.add(santri.id) : next.delete(santri.id));
+                          return next;
+                        })}
+                        className="h-4 w-4 accent-emerald-600" />
+                      <span>Santri / Event</span>
+                    </div>
                   </th>
                   {KILATAN_EVENTS.map((eventName) => (
                     <th
@@ -249,8 +312,9 @@ export const KilatanListPage: React.FC = () => {
                       className="sticky left-0 z-10 bg-white group-hover:bg-slate-50/90 px-3 py-2.5 border-r border-slate-200 min-w-[210px] shadow-xs transition-colors"
                       onClick={(e) => e.stopPropagation()}
                     >
-                      <div className="font-bold text-[#0F172A] truncate max-w-[190px]">
-                        {santri.nama}
+                      <div className="flex items-center gap-2 font-bold text-[#0F172A]">
+                        <input type="checkbox" checked={selectedIds.has(santri.id)} onChange={() => toggleSelected(santri.id)} aria-label={`Pilih ${santri.nama}`} className="h-4 w-4 shrink-0 accent-emerald-600" />
+                        <span className="truncate max-w-[160px]">{santri.nama}</span>
                       </div>
                       <div className="flex items-center gap-1.5 text-[10px] text-slate-500 mt-0.5">
                         <span className="font-mono text-slate-600">{santri.nis}</span>
@@ -263,12 +327,13 @@ export const KilatanListPage: React.FC = () => {
                     {records.map((rec) => {
                       const sisaTagihan = rec.nominal_tagihan - rec.total_dibayar;
                       const isBeforeMasuk = isKilatanBeforeTanggalMasuk(santri.tanggal_masuk, tahun, rec.event);
+                      const isBebas = santri.status_kilatan === 'Bebas';
                       return (
                         <td
                           key={rec.event}
                           onClick={() => handleCellClick(santri, rec)}
                           className={`p-1.5 text-center border-r border-slate-100 select-none relative group/cell ${
-                            isBeforeMasuk ? 'cursor-not-allowed bg-slate-50/60' : 'cursor-pointer'
+                            isBeforeMasuk || isBebas ? 'cursor-not-allowed bg-slate-50/60' : 'cursor-pointer'
                           }`}
                         >
                           {/* Custom Floating Hover Tooltip */}
@@ -276,6 +341,10 @@ export const KilatanListPage: React.FC = () => {
                             {isBeforeMasuk ? (
                               <div className="bg-slate-800 text-white font-medium text-[11px] px-2.5 py-1 rounded-md shadow-md border border-slate-700">
                                 Santri belum masuk pada bulan ini.
+                              </div>
+                            ) : isBebas ? (
+                              <div className="w-full py-1.5 px-2 rounded-md bg-emerald-50 text-emerald-700 font-medium text-[11px] border border-emerald-100 flex items-center justify-center">
+                                Bebas
                               </div>
                             ) : rec.status === 'Lunas' && (
                               <div className="bg-emerald-800 text-white font-medium text-[11px] px-2.5 py-1 rounded-md shadow-md border border-emerald-700">
@@ -417,6 +486,47 @@ export const KilatanListPage: React.FC = () => {
       </div>
 
       {/* Modal Pembayaran Kilatan */}
+      {bulkModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
+          <div className="fixed inset-0 bg-black/50" onClick={() => !isBulkSaving && setBulkModalOpen(false)} />
+          <div className="relative z-10 flex max-h-[90vh] w-full max-w-lg flex-col rounded-2xl bg-white shadow-xl">
+            <div className="flex-shrink-0 border-b border-slate-200 px-6 py-4">
+              <h2 className="text-lg font-bold text-slate-900">Periode Keringanan Massal</h2>
+              <p className="mt-1 text-sm text-slate-500">{selectedIds.size} santri terpilih</p>
+            </div>
+            <div className="flex-1 overflow-y-auto p-6">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <label className="text-sm font-medium text-slate-700">Tahun
+                <input type="number" value={tahun} readOnly className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2" />
+              </label>
+              <label className="text-sm font-medium text-slate-700">Jenis Keringanan
+                <select value={bulkJenis} onChange={(e) => setBulkJenis(e.target.value as 'Bebas' | 'Keringanan')} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2">
+                  <option value="Keringanan">Keringanan 50%</option>
+                  <option value="Bebas">Bebas</option>
+                </select>
+              </label>
+              <label className="text-sm font-medium text-slate-700">Bulan Mulai
+                <select value={bulkBulanMulai} onChange={(e) => setBulkBulanMulai(Number(e.target.value))} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2">
+                  {Array.from({ length: 12 }, (_, i) => <option key={i + 1} value={i + 1}>{i + 1}</option>)}
+                </select>
+              </label>
+              <label className="text-sm font-medium text-slate-700">Bulan Selesai
+                <select value={bulkBulanSelesai} onChange={(e) => setBulkBulanSelesai(Number(e.target.value))} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2">
+                  {Array.from({ length: 12 }, (_, i) => <option key={i + 1} value={i + 1}>{i + 1}</option>)}
+                </select>
+              </label>
+              <label className="col-span-2 text-sm font-medium text-slate-700">Keterangan
+                <textarea value={bulkKeterangan} onChange={(e) => setBulkKeterangan(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2" />
+              </label>
+              </div>
+            </div>
+            <div className="flex flex-shrink-0 justify-end gap-2 border-t border-slate-200 bg-slate-50 p-4 rounded-b-2xl">
+              <button type="button" onClick={() => setBulkModalOpen(false)} className="rounded-lg border border-slate-300 px-4 py-2 text-sm">Batal</button>
+              <button type="button" disabled={isBulkSaving || bulkBulanMulai > bulkBulanSelesai} onClick={saveBulkWaiver} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">Simpan</button>
+            </div>
+          </div>
+        </div>
+      )}
       <KilatanPaymentModal
         isOpen={paymentModalOpen}
         onClose={() => setPaymentModalOpen(false)}

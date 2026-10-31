@@ -7,6 +7,7 @@ export interface KilatanEvent {
   nominal_tagihan: number;
   total_dibayar: number;
   status: StatusKilatan;
+  status_tarif?: 'Normal' | 'Keringanan' | 'Bebas';
 }
 
 export interface KilatanItemInput {

@@ -144,7 +144,7 @@ export const KasFormModal: React.FC<KasFormModalProps> = ({
       onSuccess();
       onClose();
     } catch (err: any) {
-      showToast(err.message || 'Gagal menyimpan transaksi kas', 'error');
+      showToast(err.response?.data?.message || err.message || 'Gagal menyimpan transaksi kas', 'error');
     } finally {
       setIsSubmitting(false);
     }

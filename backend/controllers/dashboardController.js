@@ -14,14 +14,14 @@ async function getDashboardStats(req, res) {
     const [[kas]] = await pool.query(
       `SELECT COALESCE(SUM(CASE WHEN jenis = 'Pemasukan' THEN nominal ELSE 0 END), 0) AS totalPemasukanKas,
               COALESCE(SUM(CASE WHEN jenis = 'Pengeluaran' THEN nominal ELSE 0 END), 0) AS totalPengeluaranKas
-       FROM kas WHERE COALESCE(status, 'Aktif') = 'Aktif'`,
+       FROM kas WHERE status IN ('Aktif', 'Disetujui')`,
     );
     const [[bulanIni]] = await pool.query(
       `SELECT COALESCE(SUM(CASE WHEN jenis = 'Pemasukan' THEN nominal ELSE 0 END), 0) AS pemasukanBulanIni
        FROM kas
        WHERE tanggal >= DATE_FORMAT(CURRENT_DATE(), '%Y-%m-01')
          AND tanggal < DATE_ADD(DATE_FORMAT(CURRENT_DATE(), '%Y-%m-01'), INTERVAL 1 MONTH)
-         AND COALESCE(status, 'Aktif') = 'Aktif'`,
+         AND status IN ('Aktif', 'Disetujui')`,
     );
 
     const pemasukan = Number(kas.totalPemasukanKas);
@@ -50,7 +50,7 @@ async function getChartData(req, res) {
               COALESCE(SUM(CASE WHEN jenis = 'Pengeluaran' THEN nominal ELSE 0 END), 0) AS pengeluaran
        FROM kas
        WHERE tanggal >= DATE_SUB(DATE_FORMAT(CURRENT_DATE(), '%Y-%m-01'), INTERVAL 5 MONTH)
-         AND COALESCE(status, 'Aktif') = 'Aktif'
+         AND status IN ('Aktif', 'Disetujui')
        GROUP BY periode ORDER BY periode ASC`,
     );
     res.json({
@@ -69,7 +69,7 @@ async function getChartData(req, res) {
 async function getRecentTransactions(req, res) {
   try {
     const [rows] = await pool.query(
-      "SELECT * FROM kas WHERE COALESCE(status, 'Aktif') = 'Aktif' ORDER BY tanggal DESC, id DESC LIMIT 5",
+      "SELECT * FROM kas WHERE status IN ('Aktif', 'Disetujui') ORDER BY tanggal DESC, id DESC LIMIT 5",
     );
     res.json({ success: true, data: rows });
   } catch (error) {
@@ -77,4 +77,29 @@ async function getRecentTransactions(req, res) {
   }
 }
 
-module.exports = { getDashboardStats, getChartData, getRecentTransactions };
+async function getPendingApprovals(req, res) {
+  try {
+    const [pembatalan] = await pool.query(
+      `SELECT t.id, t.kas_id, t.modul, t.referensi_id, t.nominal, t.cancel_requested_at,
+              u.nama_lengkap AS diajukan_oleh
+       FROM transaksi t
+       LEFT JOIN users u ON u.id = t.cancel_requested_by
+       WHERE t.cancel_request_status = 'pending'
+       ORDER BY t.cancel_requested_at DESC`,
+    );
+    const [kasKeluar] = await pool.query(
+      `SELECT k.*, a.id AS approval_id, a.requested_by, a.status AS approval_status, a.created_at,
+              u.nama_lengkap AS diajukan_oleh
+       FROM kas_keluar_approvals a
+       JOIN kas k ON k.id = a.kas_id
+       LEFT JOIN users u ON u.id = a.requested_by
+       WHERE a.status = 'Menunggu' OR k.status = 'Menunggu'
+       ORDER BY a.created_at DESC`,
+    );
+    return res.json({ success: true, data: { pembatalan, kasKeluar } });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+}
+
+module.exports = { getDashboardStats, getChartData, getRecentTransactions, getPendingApprovals };

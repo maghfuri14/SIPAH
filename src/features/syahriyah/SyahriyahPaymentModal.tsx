@@ -9,6 +9,7 @@ import {
   Download,
   Printer,
   Wallet,
+  Copy,
 } from 'lucide-react';
 import { Santri } from '../../types/santri';
 import {
@@ -74,6 +75,11 @@ export const SyahriyahPaymentModal: React.FC<SyahriyahPaymentModalProps> = ({
   const [isLoadingTarifStatus, setIsLoadingTarifStatus] = useState(false);
   const [tarifConfig, setTarifConfig] = useState<Record<string, number>>({});
   const [iuranOptions, setIuranOptions] = useState<any[]>([]);
+  const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
+
+  useEffect(() => {
+    if (isOpen) setIdempotencyKey(crypto.randomUUID());
+  }, [isOpen]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -123,6 +129,7 @@ export const SyahriyahPaymentModal: React.FC<SyahriyahPaymentModalProps> = ({
 
   // Post-submit success view state
   const [isSuccess, setIsSuccess] = useState(false);
+  const [previewMode, setPreviewMode] = useState<'a4' | 'thermal' | null>(null);
   const [savedRecord, setSavedRecord] = useState<SyahriyahTransaksiRecord | null>(null);
 
   // Load all santri for picker
@@ -196,7 +203,8 @@ export const SyahriyahPaymentModal: React.FC<SyahriyahPaymentModalProps> = ({
     if (!selectedSantri) return;
     if (isBeforeMasuk) return;
     const rec = currentYearRecords.find((r) => r.bulan === bulan);
-    if (!rec || rec.status === 'Lunas') return;
+    if (rec?.status === 'Lunas') return;
+    if (rec?.status === 'Bebas' || rec?.status_tarif === 'Bebas') return;
 
     const key = `${selectedYear}-${bulan}`;
     if (itemInputs[key]) {
@@ -208,19 +216,22 @@ export const SyahriyahPaymentModal: React.FC<SyahriyahPaymentModalProps> = ({
       });
     } else {
       // Add selection
-      const baseSisa = rec.nominal_tagihan - rec.total_dibayar;
-      const status = selectedSantri.status_syahriyah || 'Normal';
-      const sisa = status === 'Bebas'
+      const tarifDasar = getTarifDasar(selectedSantri.kategori);
+      const statusTarif = rec?.status_tarif || selectedSantri.status_syahriyah || 'Normal';
+      const nominalEfektif = statusTarif === 'Bebas'
         ? 0
-        : status === 'Keringanan'
-          ? Math.floor(getTarifDasar(selectedSantri.kategori) / 2) - rec.total_dibayar
-          : baseSisa;
+        : statusTarif === 'Keringanan'
+          ? Math.floor(tarifDasar / 2)
+          : tarifDasar;
+      const baseSisa = rec
+        ? Math.max(0, rec.nominal_tagihan - rec.total_dibayar)
+        : nominalEfektif;
       setItemInputs((prev) => ({
         ...prev,
         [key]: {
           tahun: selectedYear,
           bulan,
-          nominal: sisa,
+          nominal: baseSisa,
           jenis: 'Penuh',
         },
       }));
@@ -357,7 +368,8 @@ export const SyahriyahPaymentModal: React.FC<SyahriyahPaymentModalProps> = ({
           metode,
           keterangan: keterangan.trim() || undefined,
           iuran_tambahan: iuranTambahan.filter((i) => i.nama.trim() && i.nominal > 0),
-        }
+        },
+        idempotencyKey,
       );
 
       setSavedRecord(rec);
@@ -368,7 +380,8 @@ export const SyahriyahPaymentModal: React.FC<SyahriyahPaymentModalProps> = ({
       );
       onSuccess();
     } catch (err: any) {
-      showToast(err.message || 'Gagal mencatat pembayaran syahriyah', 'error');
+      const apiMessage = err?.response?.data?.message;
+      showToast(apiMessage || err?.message || 'Gagal mencatat pembayaran syahriyah', 'error');
     } finally {
       setIsSubmitting(false);
     }
@@ -389,6 +402,25 @@ export const SyahriyahPaymentModal: React.FC<SyahriyahPaymentModalProps> = ({
     printKwitansiThermal(savedRecord, selectedSantri);
   };
 
+  const copyWhatsAppText = async () => {
+    if (!savedRecord || !selectedSantri) return;
+    const profil = JSON.parse(localStorage.getItem('al_hidayah_profil_pondok') || '{}');
+    const rincian = savedRecord.items.map((item) =>
+      `- Syahriyah ${BULAN_FULL_NAMES[item.bulan - 1]} ${item.tahun}: ${formatRupiah(item.nominal)}`
+    ).join('\n');
+    const text = `${profil.nama_pondok || 'Pondok Al Hidayah'}\nNo. Kwitansi: ${savedRecord.id}\nTanggal: ${tanggalBayar}\nNama Santri: ${selectedSantri.nama}\n\nRincian:\n${rincian}\n\nTotal: ${formatRupiah(savedRecord.total_pembayaran)}`;
+    try {
+      await navigator.clipboard.writeText(text);
+      showToast('Teks WhatsApp berhasil disalin', 'success');
+    } catch {
+      showToast('Gagal menyalin teks WhatsApp', 'error');
+    }
+  };
+
+  const previewReceiptHtml = previewMode === 'thermal'
+    ? `<div style="width:80mm;margin:auto;font-family:'Courier New',monospace;font-size:12px;padding:8px;background:white"><div style="text-align:center;font-weight:bold">PONDOK AL HIDAYAH<br/>KWITANSI</div><hr/><div>No: ${savedRecord?.id}</div><div>Tgl: ${tanggalBayar}</div><div>Santri: ${selectedSantri?.nama}</div><hr/>${savedRecord?.items.map(item => `<div>${BULAN_FULL_NAMES[item.bulan - 1]} ${item.tahun}<span style="float:right">${formatRupiah(item.nominal)}</span></div>`).join('') || ''}<hr/><b>Total: ${formatRupiah(savedRecord?.total_pembayaran || 0)}</b><div style="text-align:center;margin-top:12px">Terima kasih<br/>Bendahara</div></div>`
+    : `<div style="max-width:170mm;margin:20px auto;padding:24px;background:white;font-family:Arial,sans-serif"><h2 style="text-align:center">KWITANSI PEMBAYARAN SYAHRIYAH</h2><p>No: <b>${savedRecord?.id}</b></p><p>Santri: <b>${selectedSantri?.nama}</b></p><table style="width:100%;border-collapse:collapse">${savedRecord?.items.map(item => `<tr><td style="border-bottom:1px solid #ddd;padding:8px">Syahriyah ${BULAN_FULL_NAMES[item.bulan - 1]} ${item.tahun}</td><td style="border-bottom:1px solid #ddd;padding:8px;text-align:right">${formatRupiah(item.nominal)}</td></tr>`).join('') || ''}</table><p style="text-align:right;font-weight:bold">Total: ${formatRupiah(savedRecord?.total_pembayaran || 0)}</p></div>`;
+
   if (!isOpen) return null;
 
   const getTarifDasar = (kategori: string) => kategori === 'Mukim'
@@ -397,17 +429,26 @@ export const SyahriyahPaymentModal: React.FC<SyahriyahPaymentModalProps> = ({
       ? Number(tarifConfig.syahriyah_nduduk || 0)
       : Number(tarifConfig.syahriyah_kilatan || 0);
   const tarifDasarBulan = selectedSantri ? getTarifDasar(selectedSantri.kategori) : 0;
-  const statusTarif = selectedSantri?.status_syahriyah || 'Normal';
-  const tarifBulan = statusTarif === 'Bebas'
-    ? 0
-    : statusTarif === 'Keringanan' ? Math.floor(tarifDasarBulan / 2) : tarifDasarBulan;
+  const selectedMonthKey = Object.keys(itemInputs).find((key) => key.startsWith(`${selectedYear}-`));
+  const selectedMonthFromKey = selectedMonthKey ? Number(selectedMonthKey.split('-')[1]) : null;
+  const selectedMonthRecord = currentYearRecords.find((record) =>
+    selectedMonthFromKey !== null ? record.bulan === selectedMonthFromKey
+      : selectedYear === tahunAktif && bulanAktif ? record.bulan === bulanAktif : false,
+  ) || currentYearRecords.find((record) => itemInputs[`${selectedYear}-${record.bulan}`])
+    || currentYearRecords[0];
+  const statusTarif = selectedMonthRecord?.status_tarif || selectedSantri?.status_syahriyah || 'Normal';
+  const tarifBulan = selectedMonthRecord
+    ? Number(selectedMonthRecord.nominal_tagihan)
+    : statusTarif === 'Bebas'
+      ? 0
+      : statusTarif === 'Keringanan' ? Math.floor(tarifDasarBulan / 2) : tarifDasarBulan;
   const tarifBadgeClass = statusTarif === 'Bebas'
     ? 'border-emerald-200 bg-emerald-100 text-emerald-800'
     : statusTarif === 'Keringanan'
       ? 'border-amber-200 bg-amber-100 text-amber-800'
       : 'border-slate-200 bg-slate-100 text-slate-700';
   const tarifBadgeText = statusTarif === 'Bebas'
-    ? 'Bebas Syahriyah (Gratis)'
+    ? 'Bebas (Gratis)'
     : statusTarif === 'Keringanan' ? 'Keringanan (50%)' : 'Tarif Normal (100%)';
 
   return (
@@ -416,7 +457,7 @@ export const SyahriyahPaymentModal: React.FC<SyahriyahPaymentModalProps> = ({
       <div className="fixed inset-0 bg-black/50 backdrop-blur-sm transition-opacity" onClick={onClose} />
 
       {/* Modal Dialog */}
-      <div className="relative w-full max-w-2xl bg-white h-full sm:h-auto sm:max-h-[92vh] rounded-none sm:rounded-2xl shadow-2xl flex flex-col z-10 overflow-hidden">
+      <div className="relative z-10 flex h-full max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-none bg-white shadow-2xl sm:h-auto sm:rounded-2xl">
         {isSuccess && savedRecord && selectedSantri ? (
           /* SUCCESS VIEW WITH 3 ACTION BUTTONS */
           <div className="flex flex-col h-full sm:h-auto p-6 sm:p-8 text-center items-center justify-center space-y-4">
@@ -474,7 +515,7 @@ export const SyahriyahPaymentModal: React.FC<SyahriyahPaymentModalProps> = ({
 
               <button
                 type="button"
-                onClick={handlePrint}
+                onClick={() => setPreviewMode('a4')}
                 className="bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-semibold text-xs py-2.5 px-2 rounded-xl flex flex-col items-center justify-center gap-1 transition-colors shadow-xs cursor-pointer"
               >
                 <Printer className="w-4 h-4" />
@@ -483,11 +524,19 @@ export const SyahriyahPaymentModal: React.FC<SyahriyahPaymentModalProps> = ({
 
               <button
                 type="button"
-                onClick={handlePrintThermal}
+                onClick={() => setPreviewMode('thermal')}
                 className="bg-slate-800 hover:bg-slate-900 text-white font-semibold text-xs py-2.5 px-2 rounded-xl flex flex-col items-center justify-center gap-1 transition-colors shadow-xs cursor-pointer"
               >
                 <Printer className="w-4 h-4" />
                 <span>Cetak Thermal</span>
+              </button>
+              <button
+                type="button"
+                onClick={copyWhatsAppText}
+                className="col-span-3 bg-slate-100 border border-slate-200 hover:bg-slate-200 text-slate-700 font-semibold text-xs py-2.5 px-2 rounded-xl flex items-center justify-center gap-2"
+              >
+                <Copy className="w-4 h-4" />
+                <span>Salin Teks WA</span>
               </button>
             </div>
 
@@ -525,7 +574,7 @@ export const SyahriyahPaymentModal: React.FC<SyahriyahPaymentModalProps> = ({
             </div>
 
             {/* Form Content Body */}
-            <form id="syahriyahPaymentForm" onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-5">
+            <form id="syahriyahPaymentForm" onSubmit={handleSubmit} className="min-h-0 flex-1 overflow-y-auto p-6 space-y-5">
               {/* Section 1: Santri Selector if initialSantri is null */}
               {!selectedSantri ? (
                 <div className="space-y-3 bg-amber-50/60 border border-amber-200 p-4 rounded-xl">
@@ -568,6 +617,19 @@ export const SyahriyahPaymentModal: React.FC<SyahriyahPaymentModalProps> = ({
                             </span>
                           </button>
                         ))
+                      )}
+                      {previewMode && (
+                        <div className="absolute inset-0 z-30 flex flex-col bg-white">
+                          <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+                            <h3 className="text-sm font-bold text-slate-800">Preview {previewMode === 'thermal' ? 'Thermal' : 'A4'}</h3>
+                            <button type="button" onClick={() => setPreviewMode(null)} className="text-slate-500 hover:text-slate-800"><X className="h-5 w-5" /></button>
+                          </div>
+                          <iframe title="Preview kwitansi" srcDoc={previewReceiptHtml} className="flex-1 bg-slate-100" />
+                          <div className="flex justify-end gap-2 border-t border-slate-200 bg-slate-50 p-4">
+                            <button type="button" onClick={() => setPreviewMode(null)} className="rounded-lg border border-slate-300 px-4 py-2 text-sm">Kembali</button>
+                            <button type="button" onClick={previewMode === 'thermal' ? handlePrintThermal : handlePrint} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white">Cetak Sekarang</button>
+                          </div>
+                        </div>
                       )}
                     </div>
                   )}
@@ -656,11 +718,8 @@ export const SyahriyahPaymentModal: React.FC<SyahriyahPaymentModalProps> = ({
                         const bulanNum = idx + 1;
                         const rec = currentYearRecords.find((r) => r.bulan === bulanNum);
                         const isBeforeMasuk = isBeforeTanggalMasuk(selectedSantri?.tanggal_masuk, selectedYear, bulanNum);
-                        const period = new Date(selectedYear, bulanNum - 1, 1);
-                        const latestAllowed = new Date();
-                        latestAllowed.setMonth(latestAllowed.getMonth() + 12);
-                        const isBeyondLimit = period > latestAllowed;
-                        const isLunas = rec?.status === 'Lunas' || isBeforeMasuk || statusTarif === 'Bebas' || isBeyondLimit;
+                        const isLunas = rec?.status === 'Lunas' || isBeforeMasuk
+                          || rec?.status === 'Bebas' || rec?.status_tarif === 'Bebas';
 
                         const itemKey = `${selectedYear}-${bulanNum}`;
                         const isSelected = Boolean(itemInputs[itemKey]);
@@ -875,7 +934,7 @@ export const SyahriyahPaymentModal: React.FC<SyahriyahPaymentModalProps> = ({
             </form>
 
             {/* Footer */}
-            <div className="flex shrink-0 items-center justify-between border-t border-slate-200 bg-slate-50 px-6 py-4">
+            <div className="sticky bottom-0 z-10 flex shrink-0 items-center justify-between border-t border-slate-200 bg-white px-6 py-4">
               <div>
                 <span className="text-xs text-slate-500 block">Total Pembayaran:</span>
                 <span className="text-lg font-bold text-[#059669]">
@@ -892,6 +951,11 @@ export const SyahriyahPaymentModal: React.FC<SyahriyahPaymentModalProps> = ({
                 >
                   Batal
                 </button>
+                {statusTarif === 'Bebas' ? (
+                  <span className="rounded-lg bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700">
+                    Santri ini dibebaskan.
+                  </span>
+                ) : (
                 <button
                   type="submit"
                   form="syahriyahPaymentForm"
@@ -908,6 +972,7 @@ export const SyahriyahPaymentModal: React.FC<SyahriyahPaymentModalProps> = ({
                   <CheckCircle2 className="h-4 w-4" />
                   {isSubmitting ? 'Memproses...' : 'Simpan Pembayaran'}
                 </button>
+                )}
               </div>
             </div>
           </>

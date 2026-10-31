@@ -22,7 +22,7 @@ import { SantriFormModal } from './SantriFormModal';
 import { ToastContainer, showToast } from '../../components/ui/Toast';
 import { authStore } from '../../store/authStore';
 import { santriService } from '../../lib/santriService';
-import { Santri, StatusSyahriyahSantri } from '../../types/santri';
+import { Santri, StatusSyahriyahSantri, StatusKilatanSantri } from '../../types/santri';
 
 export const SantriListPage: React.FC = () => {
   const navigate = useNavigate();
@@ -68,9 +68,13 @@ export const SantriListPage: React.FC = () => {
   const [syahriyahStatusSantri, setSyahriyahStatusSantri] = useState<Santri | null>(null);
   const [syahriyahStatusValue, setSyahriyahStatusValue] =
     useState<StatusSyahriyahSantri>('Normal');
+  const [kilatanStatusValue, setKilatanStatusValue] =
+    useState<StatusKilatanSantri>('Normal');
   const [bulkSyahriyahModalOpen, setBulkSyahriyahModalOpen] = useState(false);
   const [bulkSyahriyahStatus, setBulkSyahriyahStatus] =
     useState<StatusSyahriyahSantri>('Normal');
+  const [bulkKilatanStatus, setBulkKilatanStatus] =
+    useState<StatusKilatanSantri>('Normal');
   const selectAllRef = useRef<HTMLInputElement>(null);
 
   const paginatedIds = paginated.map((santri) => santri.id);
@@ -110,6 +114,7 @@ export const SantriListPage: React.FC = () => {
   const openSyahriyahStatusModal = (santri: Santri) => {
     setSyahriyahStatusSantri(santri);
     setSyahriyahStatusValue(santri.status_syahriyah || 'Normal');
+    setKilatanStatusValue(santri.status_kilatan || 'Normal');
   };
 
   const handleSaveSyahriyahStatus = async () => {
@@ -118,27 +123,29 @@ export const SantriListPage: React.FC = () => {
     try {
       await santriService.updateSantri(syahriyahStatusSantri.id, {
         status_syahriyah: syahriyahStatusValue,
+        status_kilatan: kilatanStatusValue,
       });
-      showToast('Status Syahriyah berhasil diperbarui', 'success');
+      showToast('Status Syahriyah dan Kilatan berhasil diperbarui', 'success');
       setSyahriyahStatusSantri(null);
       await refresh();
     } catch {
-      showToast('Gagal memperbarui status Syahriyah', 'error');
+      showToast('Gagal memperbarui status modul santri', 'error');
     }
   };
 
   const handleSaveBulkSyahriyahStatus = async () => {
     try {
-      await santriService.updateSyahriyahStatusBulk(
+      await santriService.updateStatusPermanenBulk(
         Array.from(selectedIds),
-        bulkSyahriyahStatus
+        bulkSyahriyahStatus,
+        bulkKilatanStatus,
       );
-      showToast(`Status Syahriyah ${selectedIds.size} santri berhasil diperbarui`, 'success');
+      showToast(`Status permanen ${selectedIds.size} santri berhasil diperbarui`, 'success');
       setBulkSyahriyahModalOpen(false);
       clearSelectedSantri();
       await refresh();
     } catch {
-      showToast('Gagal memperbarui status Syahriyah santri terpilih', 'error');
+      showToast('Gagal memperbarui status permanen santri terpilih', 'error');
     }
   };
 
@@ -327,12 +334,13 @@ export const SantriListPage: React.FC = () => {
                 type="button"
                 onClick={() => {
                   setBulkSyahriyahStatus('Normal');
+                  setBulkKilatanStatus('Normal');
                   setBulkSyahriyahModalOpen(true);
                 }}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500 text-white text-xs font-semibold hover:bg-amber-600"
               >
                 <ShieldCheck className="w-3.5 h-3.5" />
-                Ubah Status Syahriyah
+                Ubah Status Permanen
               </button>
               {isSuperAdmin && (
                 <button
@@ -484,7 +492,27 @@ export const SantriListPage: React.FC = () => {
                       {santri.nis}
                     </td>
                     <td className="px-4 py-3 font-medium text-[#0F172A] whitespace-nowrap group-hover:text-[#059669] transition-colors">
-                      {santri.nama}
+                      <div>{santri.nama}</div>
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        {(santri.status_syahriyah || 'Normal') !== 'Normal' && (
+                          <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${
+                            santri.status_syahriyah === 'Bebas'
+                              ? 'bg-emerald-100 text-emerald-700'
+                              : 'bg-amber-100 text-amber-700'
+                          }`}>
+                            Syahriyah: {santri.status_syahriyah === 'Bebas' ? 'Bebas' : 'Keringanan'}
+                          </span>
+                        )}
+                        {(santri.status_kilatan || 'Normal') !== 'Normal' && (
+                          <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${
+                            santri.status_kilatan === 'Bebas'
+                              ? 'bg-emerald-100 text-emerald-700'
+                              : 'bg-amber-100 text-amber-700'
+                          }`}>
+                            Kilatan: {santri.status_kilatan === 'Bebas' ? 'Bebas' : 'Keringanan'}
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-4 py-3 text-slate-600 whitespace-nowrap">
                       {santri.nama_wali}
@@ -544,14 +572,10 @@ export const SantriListPage: React.FC = () => {
                             {canEditSyahriyahStatus && (
                               <button
                                 onClick={() => openSyahriyahStatusModal(santri)}
-                                title={
-                                  (santri.status_syahriyah || 'Normal') === 'Normal'
-                                    ? 'Normal'
-                                    : (santri.status_syahriyah || 'Normal') === 'Keringanan'
-                                      ? 'Keringanan 50%'
-                                      : 'Bebas Syahriyah'
-                                }
-                                aria-label={`Ubah status Syahriyah ${santri.nama}`}
+                                  title={
+                                    `Syahriyah: ${(santri.status_syahriyah || 'Normal')}; Kilatan: ${(santri.status_kilatan || 'Normal')}`
+                                  }
+                                aria-label={`Ubah status Syahriyah dan Kilatan ${santri.nama}`}
                                 className={`p-1.5 rounded-lg hover:bg-slate-100 transition-colors ${
                                   (santri.status_syahriyah || 'Normal') === 'Normal'
                                     ? 'text-slate-400'
@@ -675,7 +699,7 @@ export const SantriListPage: React.FC = () => {
 
       {/* Modal Konfirmasi Hapus Kustom */}
       {deleteConfirmSantri && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
           <div
             className="fixed inset-0 bg-black/50 backdrop-blur-sm transition-opacity"
             onClick={() => setDeleteConfirmSantri(null)}
@@ -721,8 +745,11 @@ export const SantriListPage: React.FC = () => {
           />
           <div className="relative w-full max-w-sm bg-white rounded-2xl shadow-2xl p-6 z-10 space-y-4 animate-in fade-in zoom-in-95 duration-150">
             <h3 className="text-lg font-bold text-[#0F172A]">
-              Status Syahriyah: {syahriyahStatusSantri.nama}
+              Status Global (Permanen): {syahriyahStatusSantri.nama}
             </h3>
+            <p className="text-xs text-slate-500">
+              Status ini akan dipakai jika tidak ditimpa oleh Periode Keringanan.
+            </p>
 
             <div className="space-y-2">
               {([
@@ -744,6 +771,32 @@ export const SantriListPage: React.FC = () => {
                     value={value}
                     checked={syahriyahStatusValue === value}
                     onChange={() => setSyahriyahStatusValue(value)}
+                    className="accent-[#059669]"
+                  />
+                  <span className="text-sm font-medium text-slate-700">{label}</span>
+                </label>
+              ))}
+            </div>
+
+            <div className="border-t border-slate-200 pt-4 space-y-2">
+              <p className="text-xs font-bold text-slate-800">Status Kilatan (Permanen)</p>
+              {([
+                ['Normal', 'Normal (Bayar Penuh)'],
+                ['Keringanan', 'Keringanan (50%)'],
+                ['Bebas', 'Bebas Kilatan (Gratis)'],
+              ] as [StatusKilatanSantri, string][]).map(([value, label]) => (
+                <label
+                  key={value}
+                  className={`flex items-center gap-3 p-3 border rounded-xl cursor-pointer transition-colors ${
+                    kilatanStatusValue === value ? 'border-[#059669] bg-emerald-50' : 'border-slate-200 hover:bg-slate-50'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="statusKilatan"
+                    value={value}
+                    checked={kilatanStatusValue === value}
+                    onChange={() => setKilatanStatusValue(value)}
                     className="accent-[#059669]"
                   />
                   <span className="text-sm font-medium text-slate-700">{label}</span>
@@ -777,12 +830,16 @@ export const SantriListPage: React.FC = () => {
             className="fixed inset-0 bg-black/50 backdrop-blur-sm transition-opacity"
             onClick={() => setBulkSyahriyahModalOpen(false)}
           />
-          <div className="relative w-full max-w-sm bg-white rounded-2xl shadow-2xl p-6 z-10 space-y-4 animate-in fade-in zoom-in-95 duration-150">
+          <div className="relative z-10 flex max-h-[90vh] w-full max-w-lg flex-col rounded-2xl bg-white shadow-xl animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex-shrink-0 border-b border-slate-200 px-6 py-4">
             <h3 className="text-lg font-bold text-[#0F172A]">
-              Ubah Status Syahriyah untuk {selectedIds.size} Santri
+              Ubah Status Permanen untuk {selectedIds.size} Santri
             </h3>
+            </div>
 
+            <div className="flex-1 overflow-y-auto p-6 space-y-4">
             <div className="space-y-2">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Status Syahriyah (Permanen)</p>
               {([
                 ['Normal', 'Normal (Bayar)'],
                 ['Keringanan', 'Keringanan (50%)'],
@@ -808,7 +865,35 @@ export const SantriListPage: React.FC = () => {
               ))}
             </div>
 
-            <div className="-mx-6 mt-2 flex items-center justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
+            <div className="space-y-2">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Status Kilatan (Permanen)</p>
+              {([
+                ['Normal', 'Normal (Bayar)'],
+                ['Keringanan', 'Keringanan (50%)'],
+                ['Bebas', 'Bebas Kilatan'],
+              ] as [StatusKilatanSantri, string][]).map(([value, label]) => (
+                <label
+                  key={value}
+                  className={`flex items-center gap-3 p-3 border rounded-xl cursor-pointer transition-colors ${
+                    bulkKilatanStatus === value
+                      ? 'border-amber-500 bg-amber-50'
+                      : 'border-slate-200 hover:bg-slate-50'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="bulkStatusKilatan"
+                    checked={bulkKilatanStatus === value}
+                    onChange={() => setBulkKilatanStatus(value)}
+                    className="accent-amber-500"
+                  />
+                  <span className="text-sm font-medium text-slate-700">{label}</span>
+                </label>
+              ))}
+            </div>
+            </div>
+
+            <div className="flex flex-shrink-0 justify-end gap-2 border-t border-slate-200 bg-slate-50 p-4 rounded-b-2xl">
               <button
                 type="button"
                 onClick={() => setBulkSyahriyahModalOpen(false)}

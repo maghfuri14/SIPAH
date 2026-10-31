@@ -21,11 +21,18 @@ import {
 } from 'recharts';
 import { dashboardService, DashboardStats } from '../../lib/dashboardService';
 import { formatRupiah } from '../../lib/formatter';
+import { api } from '../../lib/api';
+import { authStore } from '../../store/authStore';
+import { showToast } from '../../components/ui/Toast';
 
 export const DashboardPage: React.FC = () => {
   const navigate = useNavigate();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const user = authStore.getUser();
+  const isSuperAdmin = user?.role === 'super_admin';
+  const [pendingPembatalan, setPendingPembatalan] = useState<any[]>([]);
+  const [pendingKasKeluar, setPendingKasKeluar] = useState<any[]>([]);
 
   useEffect(() => {
     dashboardService.getDashboardStats().then((data) => {
@@ -33,6 +40,57 @@ export const DashboardPage: React.FC = () => {
       setIsLoading(false);
     });
   }, []);
+
+  const loadApprovals = async () => {
+    if (!isSuperAdmin) return;
+    try {
+      const response = await api.get('/dashboard/pending-approvals');
+      setPendingPembatalan(response.data.data?.pembatalan || []);
+      setPendingKasKeluar(response.data.data?.kasKeluar || []);
+    } catch (error: any) {
+      showToast(error.response?.data?.message || 'Gagal memuat daftar persetujuan', 'error');
+    }
+  };
+
+  useEffect(() => {
+    void loadApprovals();
+  }, [isSuperAdmin]);
+
+  const processCancellation = async (id: string, approved: boolean) => {
+    let alasan: string | undefined;
+    if (!approved) {
+      alasan = window.prompt('Alasan penolakan wajib diisi:')?.trim();
+      if (!alasan) return;
+    }
+    try {
+      await api.post(`/kas/${id}/proses-pembatalan`, {
+        status: approved ? 'approved' : 'rejected',
+        alasan,
+      });
+      showToast(approved ? 'Pembatalan disetujui' : 'Pembatalan ditolak', 'success');
+      await loadApprovals();
+    } catch (error: any) {
+      showToast(error.response?.data?.message || 'Gagal memproses pembatalan', 'error');
+    }
+  };
+
+  const processCashApproval = async (id: string, approved: boolean) => {
+    let alasan: string | undefined;
+    if (!approved) {
+      alasan = window.prompt('Alasan penolakan wajib diisi:')?.trim();
+      if (!alasan) return;
+    }
+    try {
+      await api.post(`/kas/${id}/proses-kas-keluar`, {
+        status: approved ? 'Disetujui' : 'Ditolak',
+        alasan,
+      });
+      showToast(approved ? 'Kas keluar disetujui' : 'Kas keluar ditolak', 'success');
+      await loadApprovals();
+    } catch (error: any) {
+      showToast(error.response?.data?.message || 'Gagal memproses kas keluar', 'error');
+    }
+  };
 
   const formatDateIndonesian = (date: Date) => {
     return date.toLocaleDateString('id-ID', {
@@ -176,6 +234,49 @@ export const DashboardPage: React.FC = () => {
               </div>
             </div>
           </div>
+
+          {isSuperAdmin && (pendingPembatalan.length > 0 || pendingKasKeluar.length > 0) && (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {pendingPembatalan.length > 0 && (
+                <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs">
+                  <h3 className="text-base font-bold text-[#0F172A]">Persetujuan Pembatalan</h3>
+                  <div className="mt-4 space-y-3">
+                    {pendingPembatalan.map((item) => (
+                      <div key={item.id} className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 p-3">
+                        <div>
+                          <p className="text-sm font-bold text-slate-800">{item.modul}</p>
+                          <p className="text-xs text-slate-500">{item.diajukan_oleh || 'Pengguna'} - {formatRupiah(item.nominal)}</p>
+                        </div>
+                        <div className="flex gap-2">
+                          <button onClick={() => processCancellation(item.id, true)} className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-semibold">Setujui</button>
+                          <button onClick={() => processCancellation(item.id, false)} className="px-3 py-1.5 rounded-lg bg-red-50 text-red-700 text-xs font-semibold">Tolak</button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {pendingKasKeluar.length > 0 && (
+                <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs">
+                  <h3 className="text-base font-bold text-[#0F172A]">Persetujuan Kas Keluar</h3>
+                  <div className="mt-4 space-y-3">
+                    {pendingKasKeluar.map((item) => (
+                      <div key={item.id} className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 p-3">
+                        <div>
+                          <p className="text-sm font-bold text-slate-800">{item.kategori_nama}</p>
+                          <p className="text-xs text-slate-500">{item.diajukan_oleh || 'Admin'} - {formatRupiah(item.nominal)}</p>
+                        </div>
+                        <div className="flex gap-2">
+                          <button onClick={() => processCashApproval(item.id, true)} className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-semibold">Setujui</button>
+                          <button onClick={() => processCashApproval(item.id, false)} className="px-3 py-1.5 rounded-lg bg-red-50 text-red-700 text-xs font-semibold">Tolak</button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Grid Grafik & Tabel Transaksi */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

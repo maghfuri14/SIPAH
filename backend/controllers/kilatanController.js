@@ -1,5 +1,25 @@
 const crypto = require('crypto');
 const { pool } = require('../config/db');
+const { ajukanPembatalan: ajukanPembatalanKas, prosesPembatalan: prosesPembatalanKas } = require('./kasController');
+
+async function generateNoKwitansi() {
+  const sequenceConnection = await pool.getConnection();
+  try {
+  await sequenceConnection.execute(
+    `INSERT INTO kwitansi_sequence (tanggal, sequence) VALUES (CURDATE(), 0)
+     ON DUPLICATE KEY UPDATE sequence = sequence`,
+  );
+  await sequenceConnection.execute(
+    `UPDATE kwitansi_sequence SET sequence = LAST_INSERT_ID(sequence + 1) WHERE tanggal = CURDATE()`,
+  );
+  const [[sequenceRow]] = await sequenceConnection.query('SELECT LAST_INSERT_ID() AS sequence');
+  const sequence = Number(sequenceRow.sequence);
+  const [[dateRow]] = await sequenceConnection.query('SELECT DATE_FORMAT(NOW(), "%Y%m%d") AS tanggal');
+  return `KW-${dateRow.tanggal}-${String(sequence).padStart(4, '0')}`;
+  } finally {
+    sequenceConnection.release();
+  }
+}
 
 async function getEventTarif(tahun) {
   if (tahun) {
@@ -23,20 +43,31 @@ async function getEventTarif(tahun) {
 
 async function ensureKilatan(connection, santriId, tahun) {
   const [santriRows] = await connection.execute(
-    'SELECT status_syahriyah FROM santri WHERE id = ? LIMIT 1',
+    'SELECT status_kilatan FROM santri WHERE id = ? LIMIT 1',
     [santriId],
   );
   const baseTarif = await getEventTarif(tahun);
-  const status = santriRows[0]?.status_syahriyah || 'Normal';
-  const tarif = status === 'Bebas'
-    ? 0
-    : status === 'Keringanan' ? Math.floor(baseTarif / 2) : baseTarif;
   const events = ['Jumadil Ula', 'Maulid', 'Romadhon', 'Dzulhijjah'];
+  const eventMonths = { 'Jumadil Ula': 5, Maulid: 3, Romadhon: 9, Dzulhijjah: 12 };
   for (const event of events) {
+    const [periods] = await connection.execute(
+      `SELECT jenis FROM syahriyah_keringanan
+       WHERE santri_id = ? AND tipe = 'Kilatan' AND tahun = ?
+         AND ? BETWEEN bulan_mulai AND bulan_selesai
+       ORDER BY created_at DESC LIMIT 1`,
+      [santriId, Number(tahun), eventMonths[event]],
+    );
+    const status = periods[0]?.jenis || santriRows[0]?.status_kilatan || 'Normal';
+    const tarif = status === 'Bebas' ? 0 : status === 'Keringanan' ? Math.floor(baseTarif / 2) : baseTarif;
     await connection.execute(
       `INSERT IGNORE INTO kilatan (id, santri_id, tahun, event, nominal_tagihan, total_dibayar, status)
        VALUES (?, ?, ?, ?, ?, 0, 'Belum')`,
       [crypto.randomUUID(), santriId, tahun, event, tarif],
+    );
+    await connection.execute(
+      `UPDATE kilatan SET nominal_tagihan = ?
+       WHERE santri_id = ? AND tahun = ? AND event = ? AND status IN ('Belum', 'Sebagian')`,
+      [tarif, santriId, tahun, event],
     );
   }
 }
@@ -49,7 +80,26 @@ async function getKilatanBySantri(req, res) {
       'SELECT id, santri_id, tahun, event, nominal_tagihan, total_dibayar, status FROM kilatan WHERE santri_id = ? AND tahun = ? ORDER BY event ASC',
       [santri_id, tahun],
     );
-    return res.json({ success: true, data: rows });
+    const eventMonths = { 'Jumadil Ula': 5, Maulid: 3, Romadhon: 9, Dzulhijjah: 12 };
+    const [santriRows] = await pool.execute(
+      'SELECT status_kilatan FROM santri WHERE id = ? LIMIT 1',
+      [santri_id],
+    );
+    const data = [];
+    for (const row of rows) {
+      const [periods] = await pool.execute(
+        `SELECT jenis FROM syahriyah_keringanan
+         WHERE santri_id = ? AND tipe = 'Kilatan' AND tahun = ?
+           AND ? BETWEEN bulan_mulai AND bulan_selesai
+         ORDER BY created_at DESC LIMIT 1`,
+        [santri_id, Number(tahun), eventMonths[row.event]],
+      );
+      data.push({
+        ...row,
+        status_tarif: periods[0]?.jenis || santriRows[0]?.status_kilatan || 'Normal',
+      });
+    }
+    return res.json({ success: true, data });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });
   }
@@ -66,12 +116,13 @@ async function catatPembayaranKilatan(req, res) {
 
     await connection.beginTransaction();
     let totalDibayar = 0;
+    let noKwitansiTerakhir = null;
     const [santriRows] = await connection.execute(
-      'SELECT tanggal_masuk, status_syahriyah FROM santri WHERE id = ? LIMIT 1',
+      'SELECT tanggal_masuk, status_kilatan FROM santri WHERE id = ? LIMIT 1',
       [santri_id],
     );
     if (santriRows.length === 0) throw new Error('Santri tidak ditemukan');
-    if (santriRows[0].status_syahriyah === 'Bebas') {
+    if (santriRows[0].status_kilatan === 'Bebas') {
       throw new Error('Santri dengan status Bebas tidak dikenakan pembayaran Kilatan');
     }
     const paymentYear = Number(req.body.items?.[0]?.tahun);
@@ -122,10 +173,18 @@ async function catatPembayaranKilatan(req, res) {
         [total, status, santri_id, item.tahun, item.event],
       );
       totalDibayar += Number(item.nominal);
+      const kasId = crypto.randomUUID();
+      const noKwitansi = await generateNoKwitansi();
+      noKwitansiTerakhir = noKwitansi;
       await connection.execute(
-        `INSERT INTO kas (id, tanggal, jenis, kategori_nama, nominal, keterangan, referensi_id)
-         VALUES (?, ?, 'Pemasukan', 'Kilatan', ?, ?, ?)`,
-        [crypto.randomUUID(), tanggal_bayar || new Date(), Number(item.nominal), keterangan || `Pembayaran Kilatan ${item.event}`, rows[0].id],
+        `INSERT INTO kas (id, tanggal, jenis, kategori_nama, nominal, keterangan, referensi_id, created_by, status)
+         VALUES (?, ?, 'Pemasukan', 'Kilatan', ?, ?, ?, ?, 'Disetujui')`,
+        [kasId, tanggal_bayar || new Date(), Number(item.nominal), keterangan || `Pembayaran Kilatan ${item.event}`, rows[0].id, req.user?.id || null],
+      );
+      await connection.execute(
+        `INSERT INTO transaksi (id, kas_id, no_kwitansi, santri_id, modul, referensi_id, nominal, user_id)
+         VALUES (?, ?, ?, ?, 'Kilatan', ?, ?, ?)`,
+        [crypto.randomUUID(), kasId, noKwitansi, santri_id, rows[0].id, Number(item.nominal), req.user?.id || null],
       );
     }
     if (additionalTotal > 0) {
@@ -138,7 +197,7 @@ async function catatPembayaranKilatan(req, res) {
       totalDibayar += additionalTotal;
     }
     await connection.commit();
-    return res.json({ success: true, message: 'Pembayaran kilatan berhasil dicatat', total_dibayar: totalDibayar });
+    return res.json({ success: true, message: 'Pembayaran kilatan berhasil dicatat', total_dibayar: totalDibayar, no_kwitansi: noKwitansiTerakhir });
   } catch (error) {
     await connection.rollback();
     return res.status(500).json({ success: false, message: error.message });
@@ -147,4 +206,12 @@ async function catatPembayaranKilatan(req, res) {
   }
 }
 
-module.exports = { getKilatanBySantri, catatPembayaranKilatan };
+async function ajukanPembatalan(req, res) {
+  return ajukanPembatalanKas(req, res);
+}
+
+async function prosesPembatalan(req, res) {
+  return prosesPembatalanKas(req, res);
+}
+
+module.exports = { getKilatanBySantri, catatPembayaranKilatan, ajukanPembatalan, prosesPembatalan };

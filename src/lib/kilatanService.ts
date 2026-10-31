@@ -107,7 +107,7 @@ export const kilatanService = {
     items: KilatanItemInput[],
     transaksiData: KilatanTransaksiData
   ): Promise<KilatanTransaksiRecord> {
-    await api.post(`/kilatan/${santriId}/pembayaran`, {
+    const response = await api.post(`/kilatan/${santriId}/pembayaran`, {
       items,
       iuran_tambahan: transaksiData.iuran_tambahan || [],
       tanggal_bayar: transaksiData.tanggal_bayar,
@@ -118,7 +118,7 @@ export const kilatanService = {
     const total = items.reduce((sum, item) => sum + item.nominal, 0)
       + (transaksiData.iuran_tambahan || []).reduce((sum, item) => sum + item.nominal, 0);
     return {
-      id: `kilatan-${Date.now()}`,
+      id: response.data?.no_kwitansi || `kilatan-${Date.now()}`,
       santri_id: santriId,
       santri_nama: apiSantri.nama,
       santri_nis: apiSantri.nis,

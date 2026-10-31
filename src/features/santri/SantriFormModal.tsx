@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { X, Upload, Check, Home, Building2, Calendar, UserCheck, UserX, Wand2, Users } from 'lucide-react';
-import { Santri, KategoriSantri, StatusSantri, StatusSyahriyahSantri } from '../../types/santri';
+import { Santri, KategoriSantri, StatusSantri, StatusSyahriyahSantri, StatusKilatanSantri } from '../../types/santri';
 import { santriService } from '../../lib/santriService';
 import { pendaftaranService } from '../../lib/pendaftaranService';
 import { showToast } from '../../components/ui/Toast';
@@ -29,6 +29,7 @@ export const SantriFormModal: React.FC<SantriFormModalProps> = ({
   const [kategori, setKategori] = useState<KategoriSantri>('Mukim');
   const [status, setStatus] = useState<StatusSantri>('Aktif');
   const [statusSyahriyah, setStatusSyahriyah] = useState<StatusSyahriyahSantri>('Normal');
+  const [statusKilatan, setStatusKilatan] = useState<StatusKilatanSantri>('Normal');
   const [tanggalMasuk, setTanggalMasuk] = useState(
     new Date().toISOString().substring(0, 10)
   );
@@ -58,6 +59,7 @@ export const SantriFormModal: React.FC<SantriFormModalProps> = ({
             setKategori(data.kategori);
             setStatus(data.status);
             setStatusSyahriyah(data.status_syahriyah || 'Normal');
+            setStatusKilatan(data.status_kilatan || 'Normal');
             setTanggalMasuk(data.tanggal_masuk);
             setCatatan(data.catatan || '');
             setIsNisValid(true);
@@ -73,6 +75,7 @@ export const SantriFormModal: React.FC<SantriFormModalProps> = ({
         setKategori('Mukim');
         setStatus('Aktif');
         setStatusSyahriyah('Normal');
+        setStatusKilatan('Normal');
         setTanggalMasuk(new Date().toISOString().substring(0, 10));
         setCatatan('');
       }
@@ -160,6 +163,7 @@ export const SantriFormModal: React.FC<SantriFormModalProps> = ({
           kategori,
           status,
           status_syahriyah: statusSyahriyah,
+          status_kilatan: statusKilatan,
           tanggal_masuk: tanggalMasuk,
           catatan: catatan.trim() || undefined,
         });
@@ -174,6 +178,7 @@ export const SantriFormModal: React.FC<SantriFormModalProps> = ({
           kategori,
           status,
           status_syahriyah: statusSyahriyah,
+          status_kilatan: statusKilatan,
           tanggal_masuk: tanggalMasuk,
           catatan: catatan.trim() || undefined,
         });
@@ -183,7 +188,7 @@ export const SantriFormModal: React.FC<SantriFormModalProps> = ({
       onSuccess();
       onClose();
     } catch (err: any) {
-      showToast(err.message || 'Gagal menyimpan data santri', 'error');
+      showToast(err.response?.data?.message || err.message || 'Gagal menyimpan data santri', 'error');
     } finally {
       setIsSubmitting(false);
     }
@@ -425,14 +430,20 @@ export const SantriFormModal: React.FC<SantriFormModalProps> = ({
             </div>
           </div>
 
-          {/* Status Syahriyah Radio Group (Below Kategori) */}
-          <div>
+          {/* Pembebasan Permanen */}
+          <div className="space-y-4 rounded-xl border border-slate-200 bg-slate-50/60 p-4">
+            <div>
+              <h3 className="text-sm font-bold text-slate-900">Pembebasan Permanen</h3>
+              <p className="mt-1 text-xs text-slate-500">
+                Untuk pembebasan sementara, gunakan menu Periode Keringanan di Detail Santri.
+              </p>
+            </div>
             <label className="mb-2 block text-sm font-medium text-slate-900">
-              Status Syahriyah <span className="text-red-500">*</span>
+              Status Syahriyah (Permanen) <span className="text-red-500">*</span>
             </label>
             <div role="radiogroup" aria-label="Status Syahriyah" className="grid grid-cols-3 gap-2.5">
               {[
-                { value: 'Normal', label: 'Normal (Bayar)' },
+                { value: 'Normal', label: 'Normal (100%)' },
                 { value: 'Bebas', label: 'Bebas Syahriyah' },
                 { value: 'Keringanan', label: 'Keringanan (50%)' },
               ].map((opt) => {
@@ -454,6 +465,37 @@ export const SantriFormModal: React.FC<SantriFormModalProps> = ({
                   </button>
                 );
               })}
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-medium text-slate-900">
+                Status Kilatan (Permanen) <span className="text-red-500">*</span>
+              </label>
+              <div role="radiogroup" aria-label="Status Kilatan" className="grid grid-cols-3 gap-2.5">
+                {[
+                  { value: 'Normal', label: 'Normal (100%)' },
+                  { value: 'Bebas', label: 'Bebas Kilatan' },
+                  { value: 'Keringanan', label: 'Keringanan (50%)' },
+                ].map((opt) => {
+                  const isSelected = statusKilatan === opt.value;
+                  return (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      role="radio"
+                      aria-checked={isSelected}
+                      onClick={() => setStatusKilatan(opt.value as StatusKilatanSantri)}
+                      className={`flex flex-col items-center justify-center p-2.5 rounded-xl border text-center transition-all cursor-pointer ${
+                        isSelected
+                          ? 'bg-emerald-50 border-2 border-[#059669] text-[#059669] font-semibold'
+                          : 'bg-white border-slate-200 text-slate-600 hover:border-slate-400'
+                      }`}
+                    >
+                      <span className="text-xs font-bold">{opt.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
 

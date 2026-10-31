@@ -141,20 +141,21 @@ export const syahriyahService = {
   async simpanPembayaranSyahriyah(
     santriId: string,
     items: SyahriyahItemInput[],
-    transaksiData: SyahriyahTransaksiData
+    transaksiData: SyahriyahTransaksiData,
+    idempotencyKey?: string,
   ): Promise<SyahriyahTransaksiRecord> {
-    await api.post(`/syahriyah/${santriId}/pembayaran`, {
+    const response = await api.post(`/syahriyah/${santriId}/pembayaran`, {
       items,
       iuran_tambahan: transaksiData.iuran_tambahan || [],
       tanggal_bayar: transaksiData.tanggal_bayar,
       keterangan: transaksiData.keterangan,
-    });
+    }, idempotencyKey ? { headers: { 'Idempotency-Key': idempotencyKey } } : undefined);
     const apiSantri = await santriService.getSantriById(santriId);
     if (!apiSantri) throw new Error('Data santri tidak ditemukan');
     const total = items.reduce((sum, item) => sum + item.nominal, 0)
       + (transaksiData.iuran_tambahan || []).reduce((sum, item) => sum + item.nominal, 0);
     return {
-      id: `syahriyah-${Date.now()}`,
+      id: response.data?.no_kwitansi || `syahriyah-${Date.now()}`,
       santri_id: santriId,
       santri_nama: apiSantri.nama,
       santri_nis: apiSantri.nis,

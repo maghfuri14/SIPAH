@@ -30,7 +30,9 @@ export const santriService = {
   },
 
   async updateSantri(id: string, data: Partial<Omit<Santri, 'id' | 'created_at' | 'updated_at'>>): Promise<Santri> {
-    await api.put(`/santri/${id}`, data);
+    const current = await this.getSantriById(id);
+    const response = await api.put(`/santri/${id}`, { ...data, version: current?.version ?? 1 });
+    if (response.data?.data) return { ...(current ?? {}), ...response.data.data, version: (current?.version ?? 1) + 1 } as Santri;
     return await this.getSantriById(id) as Santri;
   },
 
@@ -39,7 +41,10 @@ export const santriService = {
   },
 
   async updateSantriStatus(ids: string[], status: 'Aktif' | 'Tidak Aktif'): Promise<void> {
-    await Promise.all(ids.map((id) => api.put(`/santri/${id}`, { status })));
+    await Promise.all(ids.map(async (id) => {
+      const current = await this.getSantriById(id);
+      await api.put(`/santri/${id}`, { status, version: current?.version ?? 1 });
+    }));
   },
 
   async deleteSantriBulk(ids: string[]): Promise<void> {
@@ -47,6 +52,21 @@ export const santriService = {
   },
 
   async updateSyahriyahStatusBulk(ids: string[], status: 'Normal' | 'Keringanan' | 'Bebas'): Promise<void> {
-    await Promise.all(ids.map((id) => api.put(`/santri/${id}`, { status_syahriyah: status })));
+    await Promise.all(ids.map(async (id) => {
+      const current = await this.getSantriById(id);
+      await api.put(`/santri/${id}`, { status_syahriyah: status, version: current?.version ?? 1 });
+    }));
+  },
+
+  async updateStatusPermanenBulk(
+    ids: string[],
+    statusSyahriyah: 'Normal' | 'Keringanan' | 'Bebas',
+    statusKilatan: 'Normal' | 'Keringanan' | 'Bebas',
+  ): Promise<void> {
+    await api.put('/santri/status-permanen/bulk', {
+      ids,
+      status_syahriyah: statusSyahriyah,
+      status_kilatan: statusKilatan,
+    });
   },
 };

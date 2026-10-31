@@ -18,8 +18,11 @@ export const kasService = {
   },
 
   async updateKas(id: string, data: Partial<Omit<Kas, 'id' | 'created_at'>>): Promise<Kas> {
-    await api.put(`/kas/${id}`, data);
-    return await this.getKasById(id) as Kas;
+    const response = await api.put(`/kas/${id}`, data);
+    if (response.data?.data) return response.data.data as Kas;
+    const current = await this.getKasById(id);
+    if (current) return current;
+    return { id, ...data } as Kas;
   },
 
   async deleteKas(id: string): Promise<void> {
