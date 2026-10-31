@@ -42,7 +42,7 @@ export const UserFormModal: React.FC<UserFormModalProps> = ({
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
@@ -56,7 +56,7 @@ export const UserFormModal: React.FC<UserFormModalProps> = ({
     }
 
     const cleanUsername = username.trim().toLowerCase();
-    const allUsers = pengaturanService.getUsers();
+    const allUsers = await pengaturanService.fetchUsers();
 
     // Check username uniqueness
     const exists = allUsers.some(
@@ -75,8 +75,9 @@ export const UserFormModal: React.FC<UserFormModalProps> = ({
       return;
     }
 
+    try {
     if (editingUser) {
-      pengaturanService.updateUser(editingUser.id, {
+      await pengaturanService.updateUser(editingUser.id, {
         nama: nama.trim(),
         username: cleanUsername,
         role,
@@ -84,7 +85,7 @@ export const UserFormModal: React.FC<UserFormModalProps> = ({
         ...(password.trim() ? { password: password.trim() } : {}),
       });
     } else {
-      pengaturanService.addUser({
+      await pengaturanService.addUser({
         nama: nama.trim(),
         username: cleanUsername,
         password: password.trim(),
@@ -92,9 +93,11 @@ export const UserFormModal: React.FC<UserFormModalProps> = ({
         status,
       });
     }
-
-    onSuccess();
-    onClose();
+      onSuccess();
+      onClose();
+    } catch (error: any) {
+      setError(error?.response?.data?.message || 'Gagal menyimpan pengguna.');
+    }
   };
 
   return (

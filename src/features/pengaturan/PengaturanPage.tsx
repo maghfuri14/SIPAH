@@ -62,10 +62,6 @@ interface KwitansiSettingConfig {
   paper_width_thermal: '58mm' | '80mm';
 }
 
-const STORAGE_KEY_IURAN = 'al_hidayah_iuran_tambahan';
-const STORAGE_KEY_KATEGORI_KAS = 'al_hidayah_kategori_kas';
-const STORAGE_KEY_KWITANSI = 'al_hidayah_kwitansi_config';
-
 const DEFAULT_IURAN: IuranTambahanItem[] = [
   { id: 'iur-1', nama: 'Seragam', tipe: 'Keduanya', nominal: 50000 },
   { id: 'iur-2', nama: 'Kitab', tipe: 'Syahriyah', nominal: 35000 },
@@ -143,16 +139,7 @@ export const PengaturanPage: React.FC = () => {
 
   // TAB 4: Iuran Tambahan State
   const [iuranList, setIuranList] = useState<IuranTambahanItem[]>(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY_IURAN);
-      if (!raw) {
-        localStorage.setItem(STORAGE_KEY_IURAN, JSON.stringify(DEFAULT_IURAN));
-        return DEFAULT_IURAN;
-      }
-      return JSON.parse(raw);
-    } catch {
-      return DEFAULT_IURAN;
-    }
+    return DEFAULT_IURAN;
   });
   const [isIuranModalOpen, setIsIuranModalOpen] = useState(false);
   const [editingIuran, setEditingIuran] = useState<IuranTambahanItem | null>(null);
@@ -164,19 +151,7 @@ export const PengaturanPage: React.FC = () => {
 
   // TAB 5: Kategori Kas State
   const [kategoriKas, setKategoriKas] = useState<KategoriKasConfig>(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY_KATEGORI_KAS);
-      if (!raw) {
-        localStorage.setItem(
-          STORAGE_KEY_KATEGORI_KAS,
-          JSON.stringify(DEFAULT_KATEGORI_KAS)
-        );
-        return DEFAULT_KATEGORI_KAS;
-      }
-      return JSON.parse(raw);
-    } catch {
-      return DEFAULT_KATEGORI_KAS;
-    }
+    return DEFAULT_KATEGORI_KAS;
   });
   const [newKatPemasukan, setNewKatPemasukan] = useState('');
   const [newKatPengeluaran, setNewKatPengeluaran] = useState('');
@@ -192,13 +167,7 @@ export const PengaturanPage: React.FC = () => {
       font_size_thermal: '12px' as const,
       paper_width_thermal: '58mm' as const,
     };
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY_KWITANSI);
-      if (!raw) return def;
-      return { ...def, ...JSON.parse(raw) };
-    } catch {
-      return def;
-    }
+    return def;
   });
 
   useEffect(() => {
@@ -226,10 +195,23 @@ export const PengaturanPage: React.FC = () => {
     }, 3500);
   };
 
-  const loadAllData = () => {
-    setProfil(pengaturanService.getProfil());
-    setTarif(pengaturanService.getTarif());
-    setUsers(pengaturanService.getUsers());
+  const loadAllData = async () => {
+    try {
+      const [profilData, tarifData, usersData, iuranData, kategoriData] = await Promise.all([
+        pengaturanService.fetchProfil(),
+        pengaturanService.fetchTarif(),
+        pengaturanService.fetchUsers(),
+        api.get('/pengaturan/iuran-tambahan'),
+        api.get('/pengaturan/kategori-kas'),
+      ]);
+      setProfil(profilData);
+      setTarif(tarifData);
+      setUsers(usersData);
+      setIuranList(iuranData.data.data ?? []);
+      setKategoriKas(kategoriData.data.data ?? kategoriKas);
+    } catch (error: any) {
+      showToast(error?.response?.data?.message || 'Gagal memuat pengaturan database.', 'error');
+    }
   };
 
   useEffect(() => {
@@ -237,10 +219,14 @@ export const PengaturanPage: React.FC = () => {
   }, []);
 
   // Submit Profil
-  const handleSaveProfil = (e: React.FormEvent) => {
+  const handleSaveProfil = async (e: React.FormEvent) => {
     e.preventDefault();
-    pengaturanService.saveProfil(profil);
-    showToast('Profil pondok berhasil disimpan!');
+    try {
+      await pengaturanService.saveProfil(profil);
+      showToast('Profil pondok berhasil disimpan!');
+    } catch (error: any) {
+      showToast(error?.response?.data?.message || 'Gagal menyimpan profil pondok.', 'error');
+    }
   };
 
   // Submit Tarif
@@ -287,9 +273,12 @@ export const PengaturanPage: React.FC = () => {
         `Apakah Anda yakin ingin menghapus akun user "${user.nama}" (${user.username})?`
       )
     ) {
-      pengaturanService.deleteUser(user.id);
-      loadAllData();
-      showToast(`User "${user.nama}" telah dihapus.`);
+      pengaturanService.deleteUser(user.id).then(() => {
+        loadAllData();
+        showToast(`User "${user.nama}" telah dihapus.`);
+      }).catch((error: any) => {
+        showToast(error?.response?.data?.message || 'Gagal menghapus pengguna.', 'error');
+      });
     }
   };
 
@@ -316,17 +305,25 @@ export const PengaturanPage: React.FC = () => {
       showToast('Iuran tambahan berhasil ditambahkan');
     }
 
-    setIuranList(updated);
-    localStorage.setItem(STORAGE_KEY_IURAN, JSON.stringify(updated));
-    setIsIuranModalOpen(false);
+    api.put('/pengaturan/iuran-tambahan', updated)
+      .then(() => {
+        setIuranList(updated);
+        setIsIuranModalOpen(false);
+      })
+      .catch((error: any) => {
+        showToast(error?.response?.data?.message || 'Gagal menyimpan iuran tambahan.', 'error');
+      });
   };
 
   const handleDeleteIuran = (id: string) => {
     if (window.confirm('Yakin ingin menghapus iuran tambahan ini?')) {
       const updated = iuranList.filter((i) => i.id !== id);
-      setIuranList(updated);
-      localStorage.setItem(STORAGE_KEY_IURAN, JSON.stringify(updated));
-      showToast('Iuran tambahan berhasil dihapus');
+      api.put('/pengaturan/iuran-tambahan', updated).then(() => {
+        setIuranList(updated);
+        showToast('Iuran tambahan berhasil dihapus');
+      }).catch((error: any) => {
+        showToast(error?.response?.data?.message || 'Gagal menghapus iuran tambahan.', 'error');
+      });
     }
   };
 
@@ -342,10 +339,13 @@ export const PengaturanPage: React.FC = () => {
       ...kategoriKas,
       pemasukan: [...kategoriKas.pemasukan, newKatPemasukan.trim()],
     };
-    setKategoriKas(updated);
-    localStorage.setItem(STORAGE_KEY_KATEGORI_KAS, JSON.stringify(updated));
-    setNewKatPemasukan('');
-    showToast('Kategori pemasukan ditambahkan');
+    api.put('/pengaturan/kategori-kas', updated).then(() => {
+      setKategoriKas(updated);
+      setNewKatPemasukan('');
+      showToast('Kategori pemasukan ditambahkan');
+    }).catch((error: any) => {
+      showToast(error?.response?.data?.message || 'Gagal menyimpan kategori.', 'error');
+    });
   };
 
   const handleDeleteKatPemasukan = (cat: string) => {
@@ -353,9 +353,12 @@ export const PengaturanPage: React.FC = () => {
       ...kategoriKas,
       pemasukan: kategoriKas.pemasukan.filter((c) => c !== cat),
     };
-    setKategoriKas(updated);
-    localStorage.setItem(STORAGE_KEY_KATEGORI_KAS, JSON.stringify(updated));
-    showToast('Kategori dihapus');
+    api.put('/pengaturan/kategori-kas', updated).then(() => {
+      setKategoriKas(updated);
+      showToast('Kategori dihapus');
+    }).catch((error: any) => {
+      showToast(error?.response?.data?.message || 'Gagal menghapus kategori.', 'error');
+    });
   };
 
   const handleAddKatPengeluaran = (e: React.FormEvent) => {
@@ -369,10 +372,13 @@ export const PengaturanPage: React.FC = () => {
       ...kategoriKas,
       pengeluaran: [...kategoriKas.pengeluaran, newKatPengeluaran.trim()],
     };
-    setKategoriKas(updated);
-    localStorage.setItem(STORAGE_KEY_KATEGORI_KAS, JSON.stringify(updated));
-    setNewKatPengeluaran('');
-    showToast('Kategori pengeluaran ditambahkan');
+    api.put('/pengaturan/kategori-kas', updated).then(() => {
+      setKategoriKas(updated);
+      setNewKatPengeluaran('');
+      showToast('Kategori pengeluaran ditambahkan');
+    }).catch((error: any) => {
+      showToast(error?.response?.data?.message || 'Gagal menyimpan kategori.', 'error');
+    });
   };
 
   const handleDeleteKatPengeluaran = (cat: string) => {
@@ -380,9 +386,12 @@ export const PengaturanPage: React.FC = () => {
       ...kategoriKas,
       pengeluaran: kategoriKas.pengeluaran.filter((c) => c !== cat),
     };
-    setKategoriKas(updated);
-    localStorage.setItem(STORAGE_KEY_KATEGORI_KAS, JSON.stringify(updated));
-    showToast('Kategori dihapus');
+    api.put('/pengaturan/kategori-kas', updated).then(() => {
+      setKategoriKas(updated);
+      showToast('Kategori dihapus');
+    }).catch((error: any) => {
+      showToast(error?.response?.data?.message || 'Gagal menghapus kategori.', 'error');
+    });
   };
 
   // Kop & Kwitansi Handlers
@@ -391,7 +400,6 @@ export const PengaturanPage: React.FC = () => {
     try {
       const { data } = await api.put('/pengaturan/kwitansi-config', kwitansiConfig);
       if (data?.success) {
-        localStorage.setItem(STORAGE_KEY_KWITANSI, JSON.stringify(data.data));
         setKwitansiConfig(data.data);
         showToast('Pengaturan Kop, Kwitansi, dan Thermal berhasil disimpan!');
       }
@@ -401,18 +409,17 @@ export const PengaturanPage: React.FC = () => {
   };
 
   // Backup & Restore Handlers
-  const handleDownloadBackup = () => {
+  const handleDownloadBackup = async () => {
+    const endpoints = ['/santri', '/pendaftaran', '/kas', '/pengaturan/profil', '/pengaturan/tarif'];
     const backupData: Record<string, any> = {};
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (key) {
-        try {
-          const val = localStorage.getItem(key);
-          backupData[key] = val ? JSON.parse(val) : val;
-        } catch {
-          backupData[key] = localStorage.getItem(key);
-        }
-      }
+    try {
+      await Promise.all(endpoints.map(async (endpoint) => {
+        const { data } = await api.get(endpoint);
+        backupData[endpoint] = data.data;
+      }));
+    } catch (error: any) {
+      showToast(error?.response?.data?.message || 'Gagal menyiapkan backup database.', 'error');
+      return;
     }
 
     const dataStr =
@@ -443,20 +450,10 @@ export const PengaturanPage: React.FC = () => {
       reader.onload = (event) => {
         try {
           const json = JSON.parse(event.target?.result as string);
-          if (json && typeof json === 'object') {
-            for (const key of Object.keys(json)) {
-              const val = json[key];
-              localStorage.setItem(
-                key,
-                typeof val === 'string' ? val : JSON.stringify(val)
-              );
-            }
-            showToast('Restore data berhasil! Memuat ulang halaman...');
-            setTimeout(() => {
-              window.location.reload();
-            }, 1200);
-          } else {
+          if (!json || typeof json !== 'object') {
             showToast('Format file JSON tidak valid', 'error');
+          } else {
+            showToast('Restore file database belum didukung untuk menghindari penimpaan data. Gunakan backup JSON sebagai arsip.', 'error');
           }
         } catch (err) {
           showToast('Gagal memproses file JSON backup', 'error');

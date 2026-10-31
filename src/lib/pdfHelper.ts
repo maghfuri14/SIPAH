@@ -44,41 +44,7 @@ export function getKwitansiConfig(): KwitansiConfig {
     font_size_thermal: "12px",
     paper_width_thermal: "58mm",
   };
-  try {
-    const raw = localStorage.getItem('al_hidayah_kwitansi_config');
-    if (!raw) return defaultConfig;
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== 'object') return defaultConfig;
-    return {
-      kop_surat:
-        typeof parsed.kop_surat === 'string' && parsed.kop_surat.trim()
-          ? parsed.kop_surat
-          : defaultConfig.kop_surat,
-      footer_kwitansi:
-        typeof parsed.footer_kwitansi === 'string' && parsed.footer_kwitansi.trim()
-          ? parsed.footer_kwitansi
-          : defaultConfig.footer_kwitansi,
-      nama_penandatangan:
-        typeof parsed.nama_penandatangan === 'string' && parsed.nama_penandatangan.trim()
-          ? parsed.nama_penandatangan
-          : defaultConfig.nama_penandatangan,
-      logo_base64:
-        typeof parsed.logo_base64 === 'string' && parsed.logo_base64.trim()
-          ? parsed.logo_base64
-          : undefined,
-      catatan_kaki_thermal: typeof parsed.catatan_kaki_thermal === 'string'
-        ? parsed.catatan_kaki_thermal
-        : defaultConfig.catatan_kaki_thermal,
-      font_size_thermal: ['10px', '12px', '14px'].includes(parsed.font_size_thermal)
-        ? parsed.font_size_thermal
-        : defaultConfig.font_size_thermal,
-      paper_width_thermal: ['58mm', '80mm'].includes(parsed.paper_width_thermal)
-        ? parsed.paper_width_thermal
-        : defaultConfig.paper_width_thermal,
-    };
-  } catch {
-    return defaultConfig;
-  }
+  return defaultConfig;
 }
 
 // Terbilang Rupiah Helper

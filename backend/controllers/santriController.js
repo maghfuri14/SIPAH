@@ -27,6 +27,18 @@ async function getKeringananSantri(req, res) {
   }
 }
 
+async function getAllKeringanan(req, res) {
+  try {
+    const [rows] = await pool.execute(
+      `SELECT id, santri_id, tahun, bulan_mulai, bulan_selesai, jenis, keterangan, created_at
+       FROM syahriyah_keringanan ORDER BY tahun DESC, bulan_mulai ASC`,
+    );
+    res.json({ success: true, data: rows });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+}
+
 async function getPaidSyahriyahMonths(req, res) {
   try {
     const [rows] = await pool.execute(
@@ -93,6 +105,18 @@ async function getAllSantri(req, res) {
     res.json({ success: true, data: rows });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
+  }
+
+  async function getSantriById(req, res) {
+    try {
+      const [rows] = await pool.execute('SELECT * FROM santri WHERE id = ?', [req.params.id]);
+      if (rows.length === 0) {
+        return res.status(404).json({ success: false, message: 'Santri tidak ditemukan' });
+      }
+      return res.json({ success: true, data: rows[0] });
+    } catch (error) {
+      return res.status(500).json({ success: false, message: error.message });
+    }
   }
 }
 
@@ -245,6 +269,7 @@ async function importSantri(req, res) {
 
 module.exports = {
   getAllSantri,
+  getSantriById,
   createSantri,
   updateSantri,
   deleteSantri,
@@ -253,4 +278,5 @@ module.exports = {
   getPaidSyahriyahMonths,
   createKeringananSantri,
   deleteKeringanan,
+  getAllKeringanan,
 };

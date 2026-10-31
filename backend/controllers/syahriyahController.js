@@ -76,7 +76,7 @@ async function catatPembayaran(req, res) {
   const connection = await pool.getConnection();
   try {
     const { santri_id } = req.params;
-    const { items = [], tanggal_bayar, keterangan } = req.body;
+    const { items = [], tanggal_bayar, keterangan, iuran_tambahan = [] } = req.body;
     if (!Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ success: false, message: 'Items pembayaran wajib diisi' });
     }
@@ -95,6 +95,33 @@ async function catatPembayaran(req, res) {
     const now = new Date();
     const latest = new Date(now.getFullYear(), now.getMonth() + 13, 1);
 
+    const [settingRows] = await connection.execute(
+      'SELECT setting_value FROM app_settings WHERE setting_key = ? LIMIT 1',
+      ['iuran_tambahan'],
+    );
+    let configuredFees = [];
+    try {
+      configuredFees = settingRows[0]?.setting_value
+        ? (typeof settingRows[0].setting_value === 'string'
+          ? JSON.parse(settingRows[0].setting_value)
+          : settingRows[0].setting_value)
+        : [];
+    } catch {
+      configuredFees = [];
+    }
+    let additionalTotal = 0;
+    for (const fee of iuran_tambahan) {
+      const configured = configuredFees.find((item) => String(item.id) === String(fee.id));
+      if (!configured || !['Syahriyah', 'Keduanya'].includes(configured.tipe)) {
+        throw new Error('Iuran tambahan tidak valid.');
+      }
+      const nominal = Number(configured.nominal) || 0;
+      if (nominal < 0 || Number(fee.nominal) !== nominal) {
+        throw new Error(`Nominal iuran ${configured.nama} tidak sesuai pengaturan.`);
+      }
+      additionalTotal += nominal;
+    }
+
     for (const item of items) {
       const period = new Date(Number(item.tahun), Number(item.bulan) - 1, 1);
       if (!santriRows[0].tanggal_masuk || period < new Date(masuk.getFullYear(), masuk.getMonth(), 1)) {
@@ -107,6 +134,10 @@ async function catatPembayaran(req, res) {
       );
       if (rows.length === 0) throw new Error(`Data syahriyah bulan ${item.bulan} tidak ditemukan`);
 
+      const nominalPayment = Number(item.nominal);
+      if (!Number.isFinite(nominalPayment) || nominalPayment <= 0) throw new Error('Nominal pembayaran tidak valid.');
+      const remaining = Number(rows[0].nominal_tagihan) - Number(rows[0].total_dibayar);
+      if (nominalPayment > remaining) throw new Error('Nominal pembayaran melebihi tagihan bulan tersebut.');
       const total = Number(rows[0].total_dibayar) + Number(item.nominal);
       const status = total >= Number(rows[0].nominal_tagihan) ? 'Lunas' : total > 0 ? 'Sebagian' : 'Belum';
       await connection.execute(
@@ -119,6 +150,16 @@ async function catatPembayaran(req, res) {
          VALUES (?, ?, 'Pemasukan', 'Syahriyah', ?, ?, ?)`,
         [crypto.randomUUID(), tanggal_bayar || new Date(), Number(item.nominal), keterangan || `Pembayaran Syahriyah bulan ${item.bulan}`, rows[0].id],
       );
+    }
+
+    if (additionalTotal > 0) {
+      await connection.execute(
+        `INSERT INTO kas (id, tanggal, jenis, kategori_nama, nominal, keterangan)
+         VALUES (?, ?, 'Pemasukan', 'Iuran Tambahan', ?, ?)`,
+        [crypto.randomUUID(), tanggal_bayar || new Date(), additionalTotal,
+          keterangan || 'Iuran tambahan Syahriyah'],
+      );
+      totalDibayar += additionalTotal;
     }
 
     await connection.commit();

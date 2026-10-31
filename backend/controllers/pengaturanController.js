@@ -17,6 +17,68 @@ const DEFAULT_TARIF_CONFIG = {
   event_kilatan: 0,
 };
 
+const DEFAULT_PROFIL = {
+  nama_pondok: 'Pondok Al Hidayah Tertek',
+  alamat: 'Jln. Mayor Bismo No 71-73 Tertek Pare Kediri',
+  pengasuh: 'KH. Mujtaba Thoifur',
+  ketua: 'Muhammad Maghfuri',
+  bendahara: 'Shofil Mubarok',
+};
+
+async function getAppSetting(key, fallback, res) {
+  const [rows] = await pool.execute(
+    'SELECT setting_value FROM app_settings WHERE setting_key = ? LIMIT 1',
+    [key],
+  );
+  let value = fallback;
+  if (rows.length > 0) {
+    try {
+      value = typeof rows[0].setting_value === 'string'
+        ? JSON.parse(rows[0].setting_value)
+        : rows[0].setting_value;
+    } catch {
+      value = fallback;
+    }
+  }
+  return res.json({ success: true, data: value });
+}
+
+async function saveAppSetting(key, value) {
+  await pool.execute(
+    `INSERT INTO app_settings (setting_key, setting_value)
+     VALUES (?, ?)
+     ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)`,
+    [key, JSON.stringify(value)],
+  );
+}
+
+async function getProfilPondok(req, res) {
+  return getAppSetting('profil_pondok', DEFAULT_PROFIL, res);
+}
+
+async function saveProfilPondok(req, res) {
+  await saveAppSetting('profil_pondok', req.body);
+  return res.json({ success: true, data: req.body });
+}
+
+async function getIuranTambahan(req, res) {
+  return getAppSetting('iuran_tambahan', [], res);
+}
+
+async function saveIuranTambahan(req, res) {
+  await saveAppSetting('iuran_tambahan', req.body);
+  return res.json({ success: true, data: req.body });
+}
+
+async function getKategoriKas(req, res) {
+  return getAppSetting('kategori_kas', { pemasukan: [], pengeluaran: [] }, res);
+}
+
+async function saveKategoriKas(req, res) {
+  await saveAppSetting('kategori_kas', req.body);
+  return res.json({ success: true, data: req.body });
+}
+
 function normalizeTarif(body) {
   return Object.fromEntries(
     Object.keys(DEFAULT_TARIF_CONFIG).map((key) => [
@@ -131,4 +193,15 @@ async function saveKwitansiConfig(req, res) {
   }
 }
 
-module.exports = { getKwitansiConfig, saveKwitansiConfig, getTarifConfig, saveTarifConfig };
+module.exports = {
+  getKwitansiConfig,
+  saveKwitansiConfig,
+  getTarifConfig,
+  saveTarifConfig,
+  getProfilPondok,
+  saveProfilPondok,
+  getIuranTambahan,
+  saveIuranTambahan,
+  getKategoriKas,
+  saveKategoriKas,
+};

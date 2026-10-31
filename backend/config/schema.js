@@ -92,6 +92,20 @@ async function createTables(db) {
     await db.execute(query);
   }
 
+  const uniqueIndexes = [
+    ["ALTER TABLE syahriyah ADD UNIQUE INDEX unique_syahriyah (santri_id, tahun, bulan)", 'ER_DUP_KEYNAME', 'syahriyah'],
+    ["ALTER TABLE kilatan ADD UNIQUE INDEX unique_kilatan (santri_id, tahun, event)", 'ER_DUP_KEYNAME', 'kilatan'],
+  ];
+  for (const [query, duplicateCode] of uniqueIndexes) {
+    try {
+      await db.execute(query);
+    } catch (error) {
+      if (error.code !== duplicateCode && error.code !== 'ER_DUP_ENTRY') {
+        throw error;
+      }
+    }
+  }
+
   const optionalColumns = [
     "ALTER TABLE pendaftaran ADD COLUMN catatan TEXT",
     "ALTER TABLE pendaftaran ADD COLUMN nis_generated VARCHAR(50)",
@@ -109,15 +123,6 @@ async function createTables(db) {
       }
     }
 
-    try {
-      await db.execute(
-        'ALTER TABLE kilatan ADD UNIQUE INDEX unique_kilatan (santri_id, tahun, event)',
-      );
-    } catch (error) {
-      if (error.code !== 'ER_DUP_KEYNAME' && error.code !== 'ER_DUP_ENTRY') {
-        throw error;
-      }
-    }
   }
 }
 

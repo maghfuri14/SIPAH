@@ -2,10 +2,6 @@ import { ProfilPondok, TarifDefault, UserAccount } from '../types/pengaturan';
 import { syahriyahService } from './syahriyahService';
 import { api } from './api';
 
-const KEY_PROFIL = 'al_hidayah_profil';
-const KEY_TARIF = 'al_hidayah_tarif';
-const KEY_USERS = 'al_hidayah_users';
-
 export const DEFAULT_PROFIL: ProfilPondok = {
   nama_pondok: 'Pondok Al Hidayah Tertek',
   alamat: 'Jln. Mayor Bismo No 71-73 Tertek Pare Kediri',
@@ -21,62 +17,35 @@ export const DEFAULT_TARIF: TarifDefault = {
   event_kilatan: 0,
 };
 
-export const DEFAULT_USERS: UserAccount[] = [
-  {
-    id: 'user-1',
-    nama: 'Muhammad Maghfuri',
-    username: 'superadmin',
-    password: 'admin123',
-    role: 'super_admin',
-    status: 'Aktif',
-  },
-  {
-    id: 'user-2',
-    nama: 'Shofil Mubarok',
-    username: 'admin1',
-    password: 'admin123',
-    role: 'admin',
-    status: 'Aktif',
-  },
-  {
-    id: 'user-3',
-    nama: 'KH. Mujtaba Thoifur',
-    username: 'pengasuh',
-    password: 'admin123',
-    role: 'pemilik',
-    status: 'Aktif',
-  },
-];
+export const DEFAULT_USERS: UserAccount[] = [];
 
 export const pengaturanService = {
   // PROFIL PONDOK
   getProfil(): ProfilPondok {
-    try {
-      const data = localStorage.getItem(KEY_PROFIL);
-      if (!data) return DEFAULT_PROFIL;
-      return { ...DEFAULT_PROFIL, ...JSON.parse(data) };
-    } catch {
-      return DEFAULT_PROFIL;
-    }
+    return DEFAULT_PROFIL;
   },
 
-  saveProfil(profil: ProfilPondok): void {
-    localStorage.setItem(KEY_PROFIL, JSON.stringify(profil));
+  async fetchProfil(): Promise<ProfilPondok> {
+    const response = await api.get('/pengaturan/profil');
+    return response.data.data ?? DEFAULT_PROFIL;
+  },
+
+  async saveProfil(profil: ProfilPondok): Promise<void> {
+    await api.put('/pengaturan/profil', profil);
   },
 
   // TARIF DEFAULT
   getTarif(): TarifDefault {
-    try {
-      const data = localStorage.getItem(KEY_TARIF);
-      if (!data) return DEFAULT_TARIF;
-      return { ...DEFAULT_TARIF, ...JSON.parse(data) };
-    } catch {
-      return DEFAULT_TARIF;
-    }
+    return DEFAULT_TARIF;
   },
 
-  saveTarif(tarif: TarifDefault): void {
-    localStorage.setItem(KEY_TARIF, JSON.stringify(tarif));
+  async fetchTarif(): Promise<TarifDefault> {
+    const response = await api.get('/pengaturan/tarif');
+    return response.data.data ?? DEFAULT_TARIF;
+  },
+
+  async saveTarif(tarif: TarifDefault): Promise<void> {
+    await api.put('/pengaturan/tarif', tarif);
   },
 
   async getPaidMonths(tahun: number): Promise<number[]> {
@@ -109,63 +78,33 @@ export const pengaturanService = {
         'Gagal! Sudah ada pembayaran di bulan tersebut. Batalkan (Void) pembayaran terlebih dahulu.'
       );
     }
-    this.saveTarif(tarif);
     await api.put('/pengaturan/tarif', {
       ...tarif,
       bulan_efektif,
       tahun_efektif,
     });
-    localStorage.setItem(
-      'al_hidayah_tarif_effective',
-      JSON.stringify({
-        bulan_efektif,
-        tahun_efektif,
-        updated_at: new Date().toISOString(),
-      })
-    );
   },
 
   // MANAJEMEN PENGGUNA
   getUsers(): UserAccount[] {
-    try {
-      const data = localStorage.getItem(KEY_USERS);
-      if (!data) {
-        localStorage.setItem(KEY_USERS, JSON.stringify(DEFAULT_USERS));
-        return DEFAULT_USERS;
-      }
-      return JSON.parse(data);
-    } catch {
-      return DEFAULT_USERS;
-    }
+    return [];
   },
 
-  saveUsers(users: UserAccount[]): void {
-    localStorage.setItem(KEY_USERS, JSON.stringify(users));
+  async fetchUsers(): Promise<UserAccount[]> {
+    const response = await api.get('/auth/users');
+    return response.data.data ?? [];
   },
 
-  addUser(user: Omit<UserAccount, 'id'>): UserAccount {
-    const users = this.getUsers();
-    const newUser: UserAccount = {
-      ...user,
-      id: `user-${Date.now()}`,
-    };
-    users.push(newUser);
-    this.saveUsers(users);
-    return newUser;
+  async addUser(user: Omit<UserAccount, 'id'>): Promise<UserAccount> {
+    const response = await api.post('/auth/users', user);
+    return response.data.data;
   },
 
-  updateUser(id: string, updated: Partial<UserAccount>): void {
-    const users = this.getUsers();
-    const index = users.findIndex((u) => u.id === id);
-    if (index !== -1) {
-      users[index] = { ...users[index], ...updated };
-      this.saveUsers(users);
-    }
+  async updateUser(id: string, updated: Partial<UserAccount>): Promise<void> {
+    await api.put(`/auth/users/${id}`, updated);
   },
 
-  deleteUser(id: string): void {
-    const users = this.getUsers();
-    const filtered = users.filter((u) => u.id !== id);
-    this.saveUsers(filtered);
+  async deleteUser(id: string): Promise<void> {
+    await api.delete(`/auth/users/${id}`);
   },
 };

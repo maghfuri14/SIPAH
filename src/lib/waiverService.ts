@@ -12,6 +12,11 @@ export interface SyahriyahWaiver {
 }
 
 export const waiverService = {
+  async getWaivers(): Promise<SyahriyahWaiver[]> {
+    const response = await api.get('/santri/keringanan/all');
+    return response.data.data;
+  },
+
   async getWaiversForSantri(santriId: string): Promise<SyahriyahWaiver[]> {
     const response = await api.get(`/santri/${santriId}/keringanan`);
     return response.data.data;

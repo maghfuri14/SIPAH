@@ -10,6 +10,7 @@ import { Santri } from '../types/santri';
 import { santriService } from './santriService';
 import { kasService } from './kasService';
 import { waiverService } from './waiverService';
+import { api } from './api';
 import { isBeforeTanggalMasuk } from './formatter';
 
 const STORAGE_KEY = 'al_hidayah_syahriyah';
@@ -123,86 +124,18 @@ export function generateMockSyahriyah(
   return result;
 }
 
-function getStoredMatrixData(): Record<string, Record<number, SyahriyahBulan[]>> {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return {};
-    return JSON.parse(raw);
-  } catch {
-    return {};
-  }
-}
-
-function saveMatrixData(data: Record<string, Record<number, SyahriyahBulan[]>>): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-}
-
-function getStoredTransaksiData(): SyahriyahTransaksiRecord[] {
-  try {
-    const raw = localStorage.getItem(TRANSAKSI_KEY);
-    if (!raw) return [];
-    return JSON.parse(raw);
-  } catch {
-    return [];
-  }
-}
-
-function saveTransaksiData(list: SyahriyahTransaksiRecord[]): void {
-  localStorage.setItem(TRANSAKSI_KEY, JSON.stringify(list));
-}
-
 export const syahriyahService = {
   async getSyahriyahMatrix(tahun: number): Promise<{ santri: Santri; records: SyahriyahBulan[] }[]> {
-    await delay(200);
     const santriList = await santriService.getSantriList();
-    const stored = getStoredMatrixData();
-    const allWaivers = waiverService.getWaivers();
-
-    const matrix = santriList.map((s) => {
-      let records: SyahriyahBulan[];
-      const santriWaivers = allWaivers.filter((w) => w.santri_id === s.id && w.tahun === tahun);
-      const baseTarif = getTarifSyahriyah(s.kategori);
-
-      const getMonthWaiver = (bulan: number) => {
-        const found = santriWaivers.find(
-          (w) => bulan >= w.bulan_mulai && bulan <= w.bulan_selesai
-        );
-        if (found) return found.jenis;
-        return null;
-      };
-
-      if (stored[s.id] && stored[s.id][tahun]) {
-        records = stored[s.id][tahun].map((r) => {
-          const wJenis = getMonthWaiver(r.bulan);
-          const effectiveStatus = wJenis || s.status_syahriyah || 'Normal';
-
-          if (effectiveStatus === 'Bebas') {
-            return { ...r, nominal_tagihan: 0, status: 'Bebas' as const };
-          } else if (effectiveStatus === 'Keringanan') {
-            const reduced = Math.floor(baseTarif / 2);
-            return { ...r, nominal_tagihan: reduced };
-          }
-          return { ...r, nominal_tagihan: baseTarif };
-        });
-      } else {
-        records = generateMockSyahriyah(
-          s.id,
-          s.kategori,
-          tahun,
-          s.status_syahriyah || 'Normal',
-          santriWaivers
-        );
-        if (!stored[s.id]) stored[s.id] = {};
-        stored[s.id][tahun] = records;
+    return Promise.all(santriList.map(async (santri) => {
+      try {
+        const response = await api.get(`/syahriyah/${santri.id}/${tahun}`);
+        return { santri, records: response.data.data ?? [] };
+      } catch (error) {
+        console.warn(`Matriks syahriyah ${santri.nama} gagal dimuat.`, error);
+        return { santri, records: [] };
       }
-      return {
-        santri: s,
-        records,
-      };
-    });
-
-    saveMatrixData(stored);
-    return matrix;
+    }));
   },
 
   async simpanPembayaranSyahriyah(
@@ -210,125 +143,25 @@ export const syahriyahService = {
     items: SyahriyahItemInput[],
     transaksiData: SyahriyahTransaksiData
   ): Promise<SyahriyahTransaksiRecord> {
-    await delay(300);
-
-    const santriList = await santriService.getSantriList();
-    const santri = santriList.find((s) => s.id === santriId);
-    if (!santri) {
-      throw new Error('Data santri tidak ditemukan');
-    }
-
-    const storedMatrix = getStoredMatrixData();
-    if (!storedMatrix[santriId]) {
-      storedMatrix[santriId] = {};
-    }
-
-    // 1. Update Syahriyah matrix records for selected items
-    items.forEach((item) => {
-      if (isBeforeTanggalMasuk(santri.tanggal_masuk, item.tahun, item.bulan)) {
-        throw new Error('Gagal! Santri belum masuk pada periode tersebut.');
-      }
-
-      let yearRecords = storedMatrix[santriId][item.tahun];
-      if (!yearRecords) {
-        const santriWaivers = waiverService
-          .getWaiversForSantri(santriId)
-          .filter((w) => w.tahun === item.tahun);
-        yearRecords = generateMockSyahriyah(
-          santriId,
-          santri.kategori,
-          item.tahun,
-          santri.status_syahriyah || 'Normal',
-          santriWaivers
-        );
-      }
-
-      const index = yearRecords.findIndex((r) => r.bulan === item.bulan);
-      if (index !== -1) {
-        const currentRecord = yearRecords[index];
-        if (currentRecord.status === 'Bebas') {
-          throw new Error(`Bulan ${item.bulan} tahun ${item.tahun} bebas dari pembayaran syahriyah`);
-        }
-
-        const newTotalDibayar = currentRecord.total_dibayar + item.nominal;
-        let newStatus: StatusSyahriyah = 'Belum';
-
-        if (newTotalDibayar >= currentRecord.nominal_tagihan) {
-          newStatus = 'Lunas';
-        } else if (newTotalDibayar > 0) {
-          newStatus = 'Sebagian';
-        }
-
-        yearRecords[index] = {
-          ...currentRecord,
-          total_dibayar: newTotalDibayar,
-          status: newStatus,
-        };
-      }
-      storedMatrix[santriId][item.tahun] = yearRecords;
+    await api.post(`/syahriyah/${santriId}/pembayaran`, {
+      items,
+      iuran_tambahan: transaksiData.iuran_tambahan || [],
+      tanggal_bayar: transaksiData.tanggal_bayar,
+      keterangan: transaksiData.keterangan,
     });
-
-    saveMatrixData(storedMatrix);
-
-    // 2. Calculate Total Payment
-    const totalItems = items.reduce((sum, i) => sum + i.nominal, 0);
-    const totalIuranLain = (transaksiData.iuran_tambahan || []).reduce(
-      (sum, i) => sum + i.nominal,
-      0
-    );
-    const totalPembayaran = totalItems + totalIuranLain;
-
-    // 3. Save receipt transaction to localStorage
-    const newRecord: SyahriyahTransaksiRecord = {
-      id: 'st_' + Date.now(),
-      santri_id: santri.id,
-      santri_nama: santri.nama,
-      santri_nis: santri.nis,
+    const apiSantri = await santriService.getSantriById(santriId);
+    if (!apiSantri) throw new Error('Data santri tidak ditemukan');
+    const total = items.reduce((sum, item) => sum + item.nominal, 0)
+      + (transaksiData.iuran_tambahan || []).reduce((sum, item) => sum + item.nominal, 0);
+    return {
+      id: `syahriyah-${Date.now()}`,
+      santri_id: santriId,
+      santri_nama: apiSantri.nama,
+      santri_nis: apiSantri.nis,
       items,
       transaksi_data: transaksiData,
-      total_pembayaran: totalPembayaran,
+      total_pembayaran: total,
       created_at: new Date().toISOString(),
     };
-
-    const storedTransaksi = getStoredTransaksiData();
-    saveTransaksiData([newRecord, ...storedTransaksi]);
-
-    // 4. Automatically create income entry in Buku Kas
-    const bulanNames = [
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'Mei',
-      'Jun',
-      'Jul',
-      'Ags',
-      'Sep',
-      'Okt',
-      'Nov',
-      'Des',
-    ];
-    const bulanSummary = items
-      .map((it) => `${bulanNames[it.bulan - 1]} ${it.tahun}`)
-      .join(', ');
-
-    let kasKeterangan = `Syahriyah ${santri.nama} (${bulanSummary})`;
-    if (transaksiData.iuran_tambahan && transaksiData.iuran_tambahan.length > 0) {
-      const iuranStr = transaksiData.iuran_tambahan.map((i) => i.nama).join(', ');
-      kasKeterangan += ` + ${iuranStr}`;
-    }
-    if (transaksiData.keterangan?.trim()) {
-      kasKeterangan += ` (${transaksiData.keterangan.trim()})`;
-    }
-
-    await kasService.createKas({
-      jenis: 'Pemasukan',
-      kategori_nama: 'Syahriyah',
-      tanggal: transaksiData.tanggal_bayar,
-      nominal: totalPembayaran,
-      keterangan: kasKeterangan,
-    });
-
-    return newRecord;
   },
 };

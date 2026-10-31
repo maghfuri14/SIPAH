@@ -1,4 +1,4 @@
-import { pengaturanService } from './pengaturanService';
+import { api } from './api';
 
 export interface AuthResult {
   success: boolean;
@@ -11,38 +11,21 @@ export interface AuthResult {
  * Mock authentication function verifying credentials against al_hidayah_users.
  */
 export async function mockAuth(usernameInput: string, passwordInput: string): Promise<AuthResult> {
-  // Simulate 400ms network latency
-  await new Promise((resolve) => setTimeout(resolve, 400));
-
-  const cleanUsername = usernameInput.trim().toLowerCase();
-  const users = pengaturanService.getUsers();
-
-  const user = users.find((u) => u.username.toLowerCase() === cleanUsername);
-
-  if (user) {
-    if (user.password && user.password !== passwordInput) {
-      return { success: false, message: 'Password yang Anda masukkan salah' };
-    }
-    if (user.status === 'Nonaktif') {
-      return { success: false, message: 'Akun Anda sedang dinonaktifkan oleh Administrator' };
-    }
+  try {
+    const response = await api.post('/auth/login', {
+      username: usernameInput.trim(),
+      password: passwordInput,
+    });
+    localStorage.setItem('token', response.data.token);
     return {
       success: true,
-      role: user.role,
-      nama: user.nama,
+      role: response.data.user.role,
+      nama: response.data.user.nama_lengkap,
+    };
+  } catch (error: any) {
+    return {
+      success: false,
+      message: error?.response?.data?.message || 'Username atau password salah',
     };
   }
-
-  // Fallback defaults if user was not found in array
-  if (cleanUsername === 'superadmin' && passwordInput === 'admin123') {
-    return { success: true, role: 'super_admin', nama: 'Muhammad Maghfuri' };
-  }
-  if (cleanUsername === 'admin1' && passwordInput === 'admin123') {
-    return { success: true, role: 'admin', nama: 'Shofil Mubarok' };
-  }
-  if (cleanUsername === 'pengasuh' && passwordInput === 'admin123') {
-    return { success: true, role: 'pemilik', nama: 'KH. Mujtaba Thoifur' };
-  }
-
-  return { success: false, message: 'Username atau password salah' };
 }

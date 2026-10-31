@@ -10,6 +10,7 @@ import { Santri } from '../types/santri';
 import { santriService } from './santriService';
 import { kasService } from './kasService';
 import { isKilatanBeforeTanggalMasuk } from './formatter';
+import { api } from './api';
 
 const STORAGE_KEY = 'al_hidayah_kilatan';
 const TRANSAKSI_KEY = 'al_hidayah_kilatan_transaksi';
@@ -87,57 +88,18 @@ export function generateMockKilatan(santriId: string, tahun: number): KilatanEve
   return result;
 }
 
-function getStoredMatrixData(): Record<string, Record<number, KilatanEvent[]>> {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return {};
-    return JSON.parse(raw);
-  } catch {
-    return {};
-  }
-}
-
-function saveMatrixData(data: Record<string, Record<number, KilatanEvent[]>>): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-}
-
-function getStoredTransaksiData(): KilatanTransaksiRecord[] {
-  try {
-    const raw = localStorage.getItem(TRANSAKSI_KEY);
-    if (!raw) return [];
-    return JSON.parse(raw);
-  } catch {
-    return [];
-  }
-}
-
-function saveTransaksiData(list: KilatanTransaksiRecord[]): void {
-  localStorage.setItem(TRANSAKSI_KEY, JSON.stringify(list));
-}
-
 export const kilatanService = {
   async getKilatanMatrix(tahun: number): Promise<{ santri: Santri; records: KilatanEvent[] }[]> {
-    await delay(200);
     const santriList = await santriService.getSantriList();
-    const stored = getStoredMatrixData();
-
-    const matrix = santriList.map((s) => {
-      let records: KilatanEvent[];
-      if (stored[s.id] && stored[s.id][tahun]) {
-        records = stored[s.id][tahun];
-      } else {
-        records = generateMockKilatan(s.id, tahun);
-        if (!stored[s.id]) stored[s.id] = {};
-        stored[s.id][tahun] = records;
+    return Promise.all(santriList.map(async (santri) => {
+      try {
+        const response = await api.get(`/kilatan/${santri.id}/${tahun}`);
+        return { santri, records: response.data.data ?? [] };
+      } catch (error) {
+        console.warn(`Matriks kilatan ${santri.nama} gagal dimuat.`, error);
+        return { santri, records: [] };
       }
-      return {
-        santri: s,
-        records,
-      };
-    });
-
-    saveMatrixData(stored);
-    return matrix;
+    }));
   },
 
   async simpanPembayaranKilatan(
@@ -145,98 +107,25 @@ export const kilatanService = {
     items: KilatanItemInput[],
     transaksiData: KilatanTransaksiData
   ): Promise<KilatanTransaksiRecord> {
-    await delay(300);
-
-    const santriList = await santriService.getSantriList();
-    const santri = santriList.find((s) => s.id === santriId);
-    if (!santri) {
-      throw new Error('Data santri tidak ditemukan');
-    }
-
-    const storedMatrix = getStoredMatrixData();
-    if (!storedMatrix[santriId]) {
-      storedMatrix[santriId] = {};
-    }
-
-    // 1. Update Kilatan matrix records for selected items
-    items.forEach((item) => {
-      if (isKilatanBeforeTanggalMasuk(santri.tanggal_masuk, item.tahun, item.event)) {
-        throw new Error('Gagal! Santri belum masuk pada periode tersebut.');
-      }
-
-      let yearRecords = storedMatrix[santriId][item.tahun];
-      if (!yearRecords) {
-        yearRecords = generateMockKilatan(santriId, item.tahun);
-      }
-
-      const index = yearRecords.findIndex((r) => r.event === item.event);
-      if (index !== -1) {
-        const currentRecord = yearRecords[index];
-        const newTotalDibayar = currentRecord.total_dibayar + item.nominal;
-        let newStatus: StatusKilatan = 'Belum';
-
-        if (newTotalDibayar >= currentRecord.nominal_tagihan) {
-          newStatus = 'Lunas';
-        } else if (newTotalDibayar > 0) {
-          newStatus = 'Sebagian';
-        }
-
-        yearRecords[index] = {
-          ...currentRecord,
-          total_dibayar: newTotalDibayar,
-          status: newStatus,
-        };
-      }
-      storedMatrix[santriId][item.tahun] = yearRecords;
+    await api.post(`/kilatan/${santriId}/pembayaran`, {
+      items,
+      iuran_tambahan: transaksiData.iuran_tambahan || [],
+      tanggal_bayar: transaksiData.tanggal_bayar,
+      keterangan: transaksiData.keterangan,
     });
-
-    saveMatrixData(storedMatrix);
-
-    // 2. Calculate Total Payment
-    const totalItems = items.reduce((sum, i) => sum + i.nominal, 0);
-    const totalIuranLain = (transaksiData.iuran_tambahan || []).reduce(
-      (sum, i) => sum + i.nominal,
-      0
-    );
-    const totalPembayaran = totalItems + totalIuranLain;
-
-    // 3. Save receipt transaction to localStorage
-    const newRecord: KilatanTransaksiRecord = {
-      id: 'kt_' + Date.now(),
-      santri_id: santri.id,
-      santri_nama: santri.nama,
-      santri_nis: santri.nis,
+    const apiSantri = await santriService.getSantriById(santriId);
+    if (!apiSantri) throw new Error('Data santri tidak ditemukan');
+    const total = items.reduce((sum, item) => sum + item.nominal, 0)
+      + (transaksiData.iuran_tambahan || []).reduce((sum, item) => sum + item.nominal, 0);
+    return {
+      id: `kilatan-${Date.now()}`,
+      santri_id: santriId,
+      santri_nama: apiSantri.nama,
+      santri_nis: apiSantri.nis,
       items,
       transaksi_data: transaksiData,
-      total_pembayaran: totalPembayaran,
+      total_pembayaran: total,
       created_at: new Date().toISOString(),
     };
-
-    const storedTransaksi = getStoredTransaksiData();
-    saveTransaksiData([newRecord, ...storedTransaksi]);
-
-    // 4. (PENTING): Automatically create income entry in Buku Kas
-    const eventSummary = items
-      .map((it) => `${it.event} ${it.tahun}`)
-      .join(', ');
-
-    let kasKeterangan = `Iuran Kilatan ${santri.nama} (${eventSummary})`;
-    if (transaksiData.iuran_tambahan && transaksiData.iuran_tambahan.length > 0) {
-      const iuranStr = transaksiData.iuran_tambahan.map((i) => i.nama).join(', ');
-      kasKeterangan += ` + ${iuranStr}`;
-    }
-    if (transaksiData.keterangan?.trim()) {
-      kasKeterangan += ` (${transaksiData.keterangan.trim()})`;
-    }
-
-    await kasService.createKas({
-      jenis: 'Pemasukan',
-      kategori_nama: 'Kilatan',
-      tanggal: transaksiData.tanggal_bayar,
-      nominal: totalPembayaran,
-      keterangan: kasKeterangan,
-    });
-
-    return newRecord;
   },
 };

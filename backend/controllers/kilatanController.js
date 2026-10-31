@@ -59,7 +59,7 @@ async function catatPembayaranKilatan(req, res) {
   const connection = await pool.getConnection();
   try {
     const { santri_id } = req.params;
-    const { items = [], tanggal_bayar, keterangan } = req.body;
+    const { items = [], tanggal_bayar, keterangan, iuran_tambahan = [] } = req.body;
     if (!Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ success: false, message: 'Items pembayaran wajib diisi' });
     }
@@ -78,12 +78,42 @@ async function catatPembayaranKilatan(req, res) {
     if (paymentYear > new Date().getFullYear() + 1) {
       throw new Error('Pembayaran Kilatan maksimal hanya 12 bulan ke depan');
     }
+    const [settingRows] = await connection.execute(
+      'SELECT setting_value FROM app_settings WHERE setting_key = ? LIMIT 1',
+      ['iuran_tambahan'],
+    );
+    let configuredFees = [];
+    try {
+      configuredFees = settingRows[0]?.setting_value
+        ? (typeof settingRows[0].setting_value === 'string'
+          ? JSON.parse(settingRows[0].setting_value)
+          : settingRows[0].setting_value)
+        : [];
+    } catch {
+      configuredFees = [];
+    }
+    let additionalTotal = 0;
+    for (const fee of iuran_tambahan) {
+      const configured = configuredFees.find((item) => String(item.id) === String(fee.id));
+      if (!configured || !['Kilatan', 'Keduanya'].includes(configured.tipe)) {
+        throw new Error('Iuran tambahan tidak valid.');
+      }
+      const nominal = Number(configured.nominal) || 0;
+      if (nominal < 0 || Number(fee.nominal) !== nominal) {
+        throw new Error(`Nominal iuran ${configured.nama} tidak sesuai pengaturan.`);
+      }
+      additionalTotal += nominal;
+    }
     for (const item of items) {
       const [rows] = await connection.execute(
         'SELECT id, nominal_tagihan, total_dibayar FROM kilatan WHERE santri_id = ? AND tahun = ? AND event = ? LIMIT 1',
         [santri_id, item.tahun, item.event],
       );
       if (rows.length === 0) throw new Error(`Data kilatan ${item.event} tidak ditemukan`);
+      const nominalPayment = Number(item.nominal);
+      if (!Number.isFinite(nominalPayment) || nominalPayment <= 0) throw new Error('Nominal pembayaran tidak valid.');
+      const remaining = Number(rows[0].nominal_tagihan) - Number(rows[0].total_dibayar);
+      if (nominalPayment > remaining) throw new Error('Nominal pembayaran melebihi tagihan event tersebut.');
 
       const total = Number(rows[0].total_dibayar) + Number(item.nominal);
       const status = total >= Number(rows[0].nominal_tagihan) ? 'Lunas' : total > 0 ? 'Sebagian' : 'Belum';
@@ -97,6 +127,15 @@ async function catatPembayaranKilatan(req, res) {
          VALUES (?, ?, 'Pemasukan', 'Kilatan', ?, ?, ?)`,
         [crypto.randomUUID(), tanggal_bayar || new Date(), Number(item.nominal), keterangan || `Pembayaran Kilatan ${item.event}`, rows[0].id],
       );
+    }
+    if (additionalTotal > 0) {
+      await connection.execute(
+        `INSERT INTO kas (id, tanggal, jenis, kategori_nama, nominal, keterangan)
+         VALUES (?, ?, 'Pemasukan', 'Iuran Tambahan', ?, ?)`,
+        [crypto.randomUUID(), tanggal_bayar || new Date(), additionalTotal,
+          keterangan || 'Iuran tambahan Kilatan'],
+      );
+      totalDibayar += additionalTotal;
     }
     await connection.commit();
     return res.json({ success: true, message: 'Pembayaran kilatan berhasil dicatat', total_dibayar: totalDibayar });

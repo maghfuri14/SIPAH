@@ -5,6 +5,7 @@ import { kasService } from '../../lib/kasService';
 import { showToast } from '../../components/ui/Toast';
 import { formatThousand, parseThousand } from '../../lib/formatter';
 import { KATEGORI_PEMASUKAN, KATEGORI_PENGELUARAN } from '../../lib/constants';
+import { api } from '../../lib/api';
 
 interface KasFormModalProps {
   isOpen: boolean;
@@ -18,8 +19,6 @@ interface KategoriKasConfig {
   pengeluaran: string[];
 }
 
-const STORAGE_KEY_KATEGORI_KAS = 'al_hidayah_kategori_kas';
-
 const toKategoriList = (value: unknown, fallback: string[]): string[] => {
   if (!Array.isArray(value)) return fallback;
 
@@ -28,23 +27,6 @@ const toKategoriList = (value: unknown, fallback: string[]): string[] => {
   );
 
   return categories.length > 0 ? categories : fallback;
-};
-
-const getKategoriKas = (): KategoriKasConfig => {
-  try {
-    const rawKategori = localStorage.getItem(STORAGE_KEY_KATEGORI_KAS);
-    const savedKategori = rawKategori ? JSON.parse(rawKategori) : null;
-
-    return {
-      pemasukan: toKategoriList(savedKategori?.pemasukan, KATEGORI_PEMASUKAN),
-      pengeluaran: toKategoriList(savedKategori?.pengeluaran, KATEGORI_PENGELUARAN),
-    };
-  } catch {
-    return {
-      pemasukan: KATEGORI_PEMASUKAN,
-      pengeluaran: KATEGORI_PENGELUARAN,
-    };
-  }
 };
 
 export const KasFormModal: React.FC<KasFormModalProps> = ({
@@ -77,7 +59,15 @@ export const KasFormModal: React.FC<KasFormModalProps> = ({
 
   useEffect(() => {
     if (isOpen) {
-      setKategoriKas(getKategoriKas());
+      api.get('/pengaturan/kategori-kas').then(({ data }) => {
+        const saved = data?.data;
+        setKategoriKas({
+          pemasukan: toKategoriList(saved?.pemasukan, KATEGORI_PEMASUKAN),
+          pengeluaran: toKategoriList(saved?.pengeluaran, KATEGORI_PENGELUARAN),
+        });
+      }).catch(() => {
+        showToast('Kategori Kas dari server gagal dimuat.', 'error');
+      });
 
       setErrors({});
       if (kasId) {

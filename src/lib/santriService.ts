@@ -1,143 +1,52 @@
+import { api } from './api';
 import { Santri } from '../types/santri';
-import { INITIAL_MOCK_SANTRI } from './mockSantri';
-
-const STORAGE_KEY = 'al_hidayah_santri';
-
-function delay(ms = 300): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function getStoredSantri(): Santri[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(INITIAL_MOCK_SANTRI));
-      return INITIAL_MOCK_SANTRI;
-    }
-    return JSON.parse(raw);
-  } catch {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(INITIAL_MOCK_SANTRI));
-    return INITIAL_MOCK_SANTRI;
-  }
-}
-
-function saveSantriList(list: Santri[]): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
-}
 
 export const santriService = {
   async getSantriList(): Promise<Santri[]> {
-    await delay(300);
-    return getStoredSantri();
+    const response = await api.get('/santri');
+    return response.data.data ?? [];
   },
 
   async getSantriById(id: string): Promise<Santri | null> {
-    await delay(200);
-    const list = getStoredSantri();
-    const found = list.find((s) => s.id === id);
-    return found || null;
+    try {
+      const response = await api.get(`/santri/${id}`);
+      return response.data.data ?? null;
+    } catch (error: any) {
+      if (error?.response?.status === 404) return null;
+      throw error;
+    }
   },
 
   async checkNisUnik(nis: string, excludeId?: string): Promise<boolean> {
-    await delay(100);
-    const list = getStoredSantri();
-    const existing = list.find(
-      (s) => s.nis.trim().toLowerCase() === nis.trim().toLowerCase() && s.id !== excludeId
-    );
-    return !existing;
+    const list = await this.getSantriList();
+    return list.every((santri) =>
+      santri.id === excludeId ||
+      santri.nis.trim().toLowerCase() !== nis.trim().toLowerCase());
   },
 
   async createSantri(data: Omit<Santri, 'id' | 'created_at' | 'updated_at'>): Promise<Santri> {
-    await delay(300);
-    const list = getStoredSantri();
-
-    // Check NIS uniqueness
-    const isUnik = list.every((s) => s.nis.trim().toLowerCase() !== data.nis.trim().toLowerCase());
-    if (!isUnik) {
-      throw new Error('NIS sudah digunakan');
-    }
-
-    const now = new Date().toISOString();
-    const newSantri: Santri = {
-      ...data,
-      id: 's' + Date.now(),
-      created_at: now,
-      updated_at: now,
-    };
-
-    const updatedList = [newSantri, ...list];
-    saveSantriList(updatedList);
-    return newSantri;
+    const response = await api.post('/santri', data);
+    return response.data.data;
   },
 
-  async updateSantri(
-    id: string,
-    data: Partial<Omit<Santri, 'id' | 'created_at' | 'updated_at'>>
-  ): Promise<Santri> {
-    await delay(300);
-    const list = getStoredSantri();
-    const index = list.findIndex((s) => s.id === id);
-
-    if (index === -1) {
-      throw new Error('Data santri tidak ditemukan');
-    }
-
-    // Check NIS uniqueness if NIS is being updated
-    if (data.nis) {
-      const isUnik = list.every(
-        (s) => s.id === id || s.nis.trim().toLowerCase() !== data.nis!.trim().toLowerCase()
-      );
-      if (!isUnik) {
-        throw new Error('NIS sudah digunakan');
-      }
-    }
-
-    const updatedSantri: Santri = {
-      ...list[index],
-      ...data,
-      updated_at: new Date().toISOString(),
-    };
-
-    list[index] = updatedSantri;
-    saveSantriList(list);
-    return updatedSantri;
+  async updateSantri(id: string, data: Partial<Omit<Santri, 'id' | 'created_at' | 'updated_at'>>): Promise<Santri> {
+    await api.put(`/santri/${id}`, data);
+    return await this.getSantriById(id) as Santri;
   },
 
   async deleteSantri(id: string): Promise<void> {
-    await delay(300);
-    const list = getStoredSantri();
-    const filtered = list.filter((s) => s.id !== id);
-    saveSantriList(filtered);
+    await api.delete(`/santri/${id}`);
   },
 
   async updateSantriStatus(ids: string[], status: 'Aktif' | 'Tidak Aktif'): Promise<void> {
-    await delay(300);
-    const list = getStoredSantri();
-    const selectedIds = new Set(ids);
-    const now = new Date().toISOString();
-    const updatedList = list.map((s) =>
-      selectedIds.has(s.id) ? { ...s, status, updated_at: now } : s
-    );
-    saveSantriList(updatedList);
+    await Promise.all(ids.map((id) => api.put(`/santri/${id}`, { status })));
   },
 
   async deleteSantriBulk(ids: string[]): Promise<void> {
-    await delay(300);
-    const list = getStoredSantri();
-    const selectedIds = new Set(ids);
-    saveSantriList(list.filter((s) => !selectedIds.has(s.id)));
+    await Promise.all(ids.map((id) => api.delete(`/santri/${id}`)));
   },
 
-  async updateSyahriyahStatusBulk(
-    ids: string[],
-    status: 'Normal' | 'Keringanan' | 'Bebas'
-  ): Promise<void> {
-    await delay(300);
-    const list = getStoredSantri();
-    const selectedIds = new Set(ids);
-    const now = new Date().toISOString();
-    saveSantriList(list.map((s) =>
-      selectedIds.has(s.id) ? { ...s, status_syahriyah: status, updated_at: now } : s
-    ));
+  async updateSyahriyahStatusBulk(ids: string[], status: 'Normal' | 'Keringanan' | 'Bebas'): Promise<void> {
+    await Promise.all(ids.map((id) => api.put(`/santri/${id}`, { status_syahriyah: status })));
   },
 };

@@ -60,6 +60,20 @@ export const KilatanPaymentModal: React.FC<KilatanPaymentModalProps> = ({
   const [itemInputs, setItemInputs] = useState<Record<string, KilatanItemInput>>({});
   const [isLoadingTarifStatus, setIsLoadingTarifStatus] = useState(false);
   const [tarifConfig, setTarifConfig] = useState<Record<string, number>>({});
+  const [iuranOptions, setIuranOptions] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    api.get('/pengaturan/iuran-tambahan')
+      .then(({ data }) => {
+        const list = Array.isArray(data?.data) ? data.data : [];
+        setIuranOptions(list.filter((item: any) =>
+          item?.nama &&
+          ['Kilatan', 'Keduanya'].includes(item.tipe),
+        ));
+      })
+      .catch(() => showToast('Iuran tambahan dari server gagal dimuat.', 'error'));
+  }, [isOpen]);
 
   useEffect(() => {
     if (!isOpen || !selectedSantri?.id) return;
@@ -228,24 +242,7 @@ export const KilatanPaymentModal: React.FC<KilatanPaymentModalProps> = ({
 
   // Additional fees helpers
   const getStoredIuranOptions = () => {
-    const defaults = [
-      { id: 'iur-1', nama: 'Seragam', tipe: 'Keduanya', nominal: 0 },
-      { id: 'iur-2', nama: 'Kitab', tipe: 'Kilatan', nominal: 35000 },
-    ];
-    try {
-      const raw = localStorage.getItem('al_hidayah_iuran_tambahan');
-      const list = raw ? JSON.parse(raw) : null;
-      if (!Array.isArray(list)) return defaults;
-      const options = list.filter((item) =>
-        item &&
-        typeof item.nama === 'string' &&
-        item.nama.trim() &&
-        (item.tipe === 'Kilatan' || item.tipe === 'Keduanya' || !item.tipe)
-      );
-      return options.length > 0 ? options : defaults;
-    } catch {
-      return defaults;
-    }
+    return iuranOptions;
   };
 
   const handleToggleIuran = (option: any, checked: boolean) => {

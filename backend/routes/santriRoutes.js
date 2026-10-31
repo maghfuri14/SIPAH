@@ -1,6 +1,7 @@
 const express = require('express');
 const {
   getAllSantri,
+  getSantriById,
   createSantri,
   updateSantri,
   deleteSantri,
@@ -9,12 +10,15 @@ const {
   getPaidSyahriyahMonths,
   createKeringananSantri,
   deleteKeringanan,
+  getAllKeringanan,
 } = require('../controllers/santriController');
 const { authenticate, authorizeRoles } = require('../middleware/authMiddleware');
 
 const router = express.Router();
 
 router.get('/', authenticate, getAllSantri);
+router.get('/:id', authenticate, getSantriById);
+router.get('/keringanan/all', authenticate, getAllKeringanan);
 router.post('/', authenticate, authorizeRoles('super_admin', 'admin'), createSantri);
 router.post('/import', authenticate, authorizeRoles('super_admin', 'admin'), importSantri);
 router.get('/:id/keringanan', authenticate, getKeringananSantri);
